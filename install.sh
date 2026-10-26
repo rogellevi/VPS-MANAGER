@@ -1,11 +1,11 @@
 #!/bin/bash
 # ==========================================
-# Script de Instalación - MANAGER VPS V5.0
+# Script de Instalación - VPS MANAGER V5.0
 # ==========================================
 
 clear
 echo -e "\033[1;36m================================================\033[0m"
-echo -e "\033[1;32m       INSTALADOR GOLBERT VPS V4.5 LTS          \033[0m"
+echo -e "\033[1;32m       INSTALADOR VPS MANAGER V4.5 LTS          \033[0m"
 echo -e "\033[1;36m================================================\033[0m"
 
 # ==========================================
@@ -20,11 +20,25 @@ fi
 # ==========================================
 # 1. SISTEMA DE KEY / LICENCIA
 # ==========================================
-echo -e "\n\033[1;33mPor favor, ingrese su Key de instalación:\033[0m"
-read -p "Key: " input_key
+
+#echo -e "\n\033[1;33mPor favor, ingrese su Key de instalación:\033[0m"
+#read -p "Key: " input_key="FREEKEY"
+
+#if [ -z "$input_key" ]; then
+#    echo -e "\n\033[1;31m[!] Error: No se ingresó ninguna Key.\033[0m"
+#    exit 1
+#fi
+
+#echo -e "\n\033[1;36mVerificando Key...\033[0m"
+#sleep 1
+
+
+input_key="FREE-KEY-GT"
+
+echo -e "\n\033[1;33mKey de instalación cargada.\033[0m"
 
 if [ -z "$input_key" ]; then
-    echo -e "\n\033[1;31m[!] Error: No se ingresó ninguna Key.\033[0m"
+    echo -e "\n\033[1;31m[!] Error: No se configuró ninguna Key.\033[0m"
     exit 1
 fi
 
@@ -128,9 +142,9 @@ mkdir -p /usr/local/bin
 # ==========================================
 echo -e "\033[1;32m[✔] Descargando componentes y módulos core...\033[0m"
 
-wget -O /etc/vps-manager/proxy.py https://raw.githubusercontent.com/golbert19/vps-script/main/core/proxy.py
-wget -O /etc/vps-manager/limiter.sh https://raw.githubusercontent.com/golbert19/vps-script/main/core/limiter.sh
-wget -O /etc/vps-manager/core/setup_dns.sh https://raw.githubusercontent.com/golbert19/vps-script/main/core/setup_dns.sh
+wget -O /etc/vps-manager/proxy.py https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/proxy.py
+wget -O /etc/vps-manager/limiter.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/limiter.sh
+wget -O /etc/vps-manager/core/setup_dns.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/setup_dns.sh
 
 chmod +x /etc/vps-manager/limiter.sh
 chmod +x /etc/vps-manager/core/setup_dns.sh
@@ -142,7 +156,7 @@ echo -e "\033[1;32m[✔] Instalando el Panel Principal...\033[0m"
 rm -f /usr/local/bin/menu
 rm -f /usr/local/bin/me
 
-wget -O /usr/local/bin/menu https://raw.githubusercontent.com/golbert19/vps-script/main/menu.sh
+wget -O /usr/local/bin/menu https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/menu.sh
 chmod +x /usr/local/bin/menu
 
 # ==========================================
