@@ -6,14 +6,14 @@ C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;
 
 clear
 echo -e "${C_CYAN}================================================${C_NC}"
-echo -e "${C_GREEN}        ACTUALIZADOR DE PANEL GOLBERT VPS       ${C_NC}"
+echo -e "${C_GREEN}        ACTUALIZADOR DE PANEL VPS MANAGER       ${C_NC}"
 echo -e "${C_CYAN}================================================${C_NC}"
 
 echo -e "${C_YELLOW}[+] Buscando actualizaciones en GitHub...${C_NC}"
-wget -qO /tmp/menu.sh "https://raw.githubusercontent.com/golbert19/vps-script/main/menu.sh"
+wget -qO /tmp/menu.sh "https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/update/menu"
 
 if [ -s /tmp/menu.sh ]; then
-    echo -e "${C_YELLOW}[+] Descarga completada. Aplicando actualización...${C_NC}"
+    echo -e "${C_YELLOW}[+] Descarga Exitosa. Aplicando actualización...${C_NC}"
     mv /tmp/menu.sh /usr/local/bin/menu
     chmod +x /usr/local/bin/menu
     
@@ -22,6 +22,6 @@ if [ -s /tmp/menu.sh ]; then
     exec menu
 else
     echo -e "${C_RED}[!] Error al descargar la actualización.${C_NC}"
-    echo -e "${C_YELLOW}Verifica tu conexión a internet o asegúrate de que el archivo menu.sh existe en el repositorio.${C_NC}"
+    echo -e "${C_YELLOW}Verifica tu conexión a internet o asegúrate de que el archivo menu existe en el repositorio.${C_NC}"
     sleep 3
 fi
