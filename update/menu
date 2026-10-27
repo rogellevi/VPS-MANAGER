@@ -36,7 +36,7 @@ echo -e "  Se descargarán los siguientes archivos:"
 echo -e "  - ${C_NEON_YELLOW}/etc/vps-manager/check.py${C_RST}"
 echo -e "  - ${C_NEON_YELLOW}/etc/vps-manager/4gcheck.py${C_RST}"
 echo -e "  - ${C_NEON_YELLOW}/bin/check${C_RST}"
-echo -e "  Además se instalarán: ${C_NEON_YELLOW}python3-pip, flask, screen${C_RST}"
+echo -e "  Además se instalarán: ${C_NEON_YELLOW}python3-pip, flask${C_RST}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar archivos de CheckUser"
 echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Principal"
@@ -44,9 +44,9 @@ echo -e "${C_NEON_BLUE}╚══════════════════
 read -p "Seleccione una opción: " inst_opt
 case $inst_opt in
 1)
-echo -e "${C_YELLOW}[+] Instalando dependencias (python3-pip, flask, screen)...${C_RST}"
+echo -e "${C_YELLOW}[+] Instalando dependencias (python3-pip, flask)...${C_RST}"
 apt update -y >/dev/null 2>&1
-apt install python3-pip flask screen -y >/dev/null 2>&1
+apt install python3-pip flask -y >/dev/null 2>&1
 pip3 install flask >/dev/null 2>&1
 echo -e "${C_YELLOW}[+] Descargando archivos de CheckUser...${C_RST}"
 wget -qO /etc/vps-manager/check.py https://raw.githubusercontent.com/rogellevi/SSHPLUS-fixed/master/Modulos/check.py
@@ -62,8 +62,15 @@ esac
 fi
 while true; do
 clear
-local is_std_running=$(screen -ls 2>/dev/null | grep -c "\.checkuser")
-local is_4g_running=$(screen -ls 2>/dev/null | grep -c "\.4gcheck")
+# Estado vía systemd (más fiable)
+local is_std_running=0
+local is_4g_running=0
+systemctl is-active --quiet checkuser.service 2>/dev/null && is_std_running=1
+systemctl is-active --quiet checkuser-4g.service 2>/dev/null && is_4g_running=1
+# Fallback a screen por si aún queda sesión antigua
+[ "$is_std_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -c '\.checkuser')" -gt 0 ] && is_std_running=1
+[ "$is_4g_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -c '\.4gcheck')" -gt 0 ] && is_4g_running=1
+
 local std_status="❌ INACTIVO"
 local std_color="$C_RED"
 [ "$is_std_running" -gt 0 ] && { std_status="✅ ACTIVO"; std_color="$C_GREEN"; }
@@ -83,9 +90,14 @@ case $cu_opt in
 1)
 if [ "$is_std_running" -gt 0 ]; then
 echo -e "${C_YELLOW}[+] Desactivando CheckUser (Estándar)...${C_RST}"
+systemctl stop checkuser.service 2>/dev/null
+systemctl disable checkuser.service 2>/dev/null
+rm -f /etc/systemd/system/checkuser.service
+systemctl daemon-reload 2>/dev/null
+# Limpiar restos de screen y autostart antiguos
 screen -S checkuser -X quit 2>/dev/null
 screen -wipe >/dev/null 2>&1
-sed -i '/check.py/d' /etc/autostart 2>/dev/null
+sed -i '/check\.py/d' /etc/autostart 2>/dev/null
 echo -e "${C_GREEN}[✔] CheckUser (Estándar) desactivado.${C_RST}"
 read -p "Presione Enter para continuar..."
 else
@@ -112,12 +124,40 @@ echo -e "  ${C_NEON_YELLOW}2.${C_RST} DD/MM/YYYY"
 read -p "Opción: " fmt_opt
 local format=1
 [ "$fmt_opt" == "2" ] && format=2
-echo -e "${C_YELLOW}[+] Iniciando CheckUser (Estándar) en puerto $porta...${C_RST}"
-screen -dmS checkuser python3 /etc/vps-manager/check.py "$porta" "$format"
-sed -i '/check.py/d' /etc/autostart 2>/dev/null
-echo "screen -dmS checkuser python3 /etc/vps-manager/check.py $porta $format" >> /etc/autostart
+echo -e "${C_YELLOW}[+] Configurando servicio systemd CheckUser (Estándar) en puerto $porta...${C_RST}"
+
+# Guardar puerto y formato para referencia
+echo "$porta" > /etc/vps-manager/checkuser_port
+echo "$format" > /etc/vps-manager/checkuser_format
+
+# Crear unit systemd
+cat > /etc/systemd/system/checkuser.service << EOF
+[Unit]
+Description=VPS-Manager CheckUser (Estándar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /etc/vps-manager/check.py $porta $format
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable checkuser.service >/dev/null 2>&1
+systemctl restart checkuser.service
+
+# Limpiar restos antiguos
+sed -i '/check\.py/d' /etc/autostart 2>/dev/null
+screen -S checkuser -X quit 2>/dev/null
+
 local IP=$(curl -s --max-time 3 ipv4.icanhazip.com || hostname -I | awk '{print $1}')
-echo -e "${C_GREEN}[✔] CheckUser (Estándar) activado correctamente.${C_RST}"
+echo -e "${C_GREEN}[✔] CheckUser (Estándar) activado con systemd (se reinicia al arrancar el VPS).${C_RST}"
 echo -e "${C_CYAN}URL: http://$IP:$porta/checkUser${C_RST}"
 read -p "Presione Enter para continuar..."
 fi
@@ -125,9 +165,13 @@ fi
 2)
 if [ "$is_4g_running" -gt 0 ]; then
 echo -e "${C_YELLOW}[+] Desactivando CheckUser (Conecta4G)...${C_RST}"
+systemctl stop checkuser-4g.service 2>/dev/null
+systemctl disable checkuser-4g.service 2>/dev/null
+rm -f /etc/systemd/system/checkuser-4g.service
+systemctl daemon-reload 2>/dev/null
 screen -S 4gcheck -X quit 2>/dev/null
 screen -wipe >/dev/null 2>&1
-sed -i '/4gcheck.py/d' /etc/autostart 2>/dev/null
+sed -i '/4gcheck\.py/d' /etc/autostart 2>/dev/null
 echo -e "${C_GREEN}[✔] CheckUser (Conecta4G) desactivado.${C_RST}"
 read -p "Presione Enter para continuar..."
 else
@@ -148,12 +192,36 @@ echo -e "${C_RED}[!] El puerto $porta ya está en uso por: $svc${C_RST}"
 sleep 3
 continue
 fi
-echo -e "${C_YELLOW}[+] Iniciando CheckUser (Conecta4G) en puerto $porta...${C_RST}"
-screen -dmS 4gcheck python3 /etc/vps-manager/4gcheck.py "$porta"
-sed -i '/4gcheck.py/d' /etc/autostart 2>/dev/null
-echo "screen -dmS 4gcheck python3 /etc/vps-manager/4gcheck.py $porta" >> /etc/autostart
+echo -e "${C_YELLOW}[+] Configurando servicio systemd CheckUser (Conecta4G) en puerto $porta...${C_RST}"
+
+echo "$porta" > /etc/vps-manager/checkuser4g_port
+
+cat > /etc/systemd/system/checkuser-4g.service << EOF
+[Unit]
+Description=VPS-Manager CheckUser (Conecta4G)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /etc/vps-manager/4gcheck.py $porta
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable checkuser-4g.service >/dev/null 2>&1
+systemctl restart checkuser-4g.service
+
+sed -i '/4gcheck\.py/d' /etc/autostart 2>/dev/null
+screen -S 4gcheck -X quit 2>/dev/null
+
 local IP=$(curl -s --max-time 3 ipv4.icanhazip.com || hostname -I | awk '{print $1}')
-echo -e "${C_GREEN}[✔] CheckUser (Conecta4G) activado correctamente.${C_RST}"
+echo -e "${C_GREEN}[✔] CheckUser (Conecta4G) activado con systemd (se reinicia al arrancar el VPS).${C_RST}"
 echo -e "${C_CYAN}URL: http://$IP:$porta/checkUser${C_RST}"
 read -p "Presione Enter para continuar..."
 fi
@@ -164,6 +232,7 @@ esac
 done
 }
 
+
 # ==========================================
 # SUBMENÚ: HERRAMIENTAS Y SISTEMA
 # ==========================================
@@ -171,10 +240,15 @@ menu_herramientas() {
 while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
-local onlineapp_running=$(screen -ls 2>/dev/null | grep -c "\.onlineapp")
+local onlineapp_running=0
+systemctl is-active --quiet onlineapp.service 2>/dev/null && onlineapp_running=1
+[ "$onlineapp_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -c onlineapp)" -gt 0 ] && onlineapp_running=1
 local onlineapp_indicator="🔴"
 [ "$onlineapp_running" -gt 0 ] && onlineapp_indicator="🟢"
-local checkuser_running=$(screen -ls 2>/dev/null | grep -cE "\.(checkuser|4gcheck)")
+local checkuser_running=0
+systemctl is-active --quiet checkuser.service 2>/dev/null && checkuser_running=1
+systemctl is-active --quiet checkuser-4g.service 2>/dev/null && checkuser_running=1
+[ "$checkuser_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -cE '\.(checkuser|4gcheck)')" -gt 0 ] && checkuser_running=1
 local checkuser_indicator="🔴"
 [ "$checkuser_running" -gt 0 ] && checkuser_indicator="🟢"
 if [ "$SYS_LANG" == "en" ]; then
@@ -199,7 +273,7 @@ H_OPT4="🤖 Activar Auto-Inicio"
 H_OPT5="🖥️ Especificaciones y Capacidad del VPS"
 H_OPT6="🛡️ Gestor de Firewall (Reglas y Seguridad)"
 H_OPT7="📱 Activar Online App"
-H_OPT8="🛡️ CheckUser Avanzado (Monitor Multi-App)"
+H_OPT8="🛡️ CheckUser Avanzado "
 H_OPT9="🌍 Cambiar Idioma (ES/EN)"
 H_OPT0="🔙 Volver al Menú Principal"
 H_SEL="Seleccione una opción: "
@@ -700,13 +774,17 @@ done
 
 menu_onlineapp() {
 clear
-local is_running=$(screen -ls 2>/dev/null | grep -c "onlineapp")
+local is_running=0
+systemctl is-active --quiet onlineapp.service 2>/dev/null && is_running=1
+# Fallback a screen antiguo
+[ "$is_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -c 'onlineapp')" -gt 0 ] && is_running=1
+
 local IP=$(curl -s --max-time 3 ipv4.icanhazip.com || hostname -I | awk '{print $1}')
 echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
 echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         📱 GESTIÓN DE ONLINE APP             ${C_NEON_BLUE} ${C_RST}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 if [ "$is_running" -gt 0 ]; then
-echo -e "  Estado: ${C_GREEN}✅ ACTIVO${C_RST}"
+echo -e "  Estado: ${C_GREEN}✅ ACTIVO (systemd)${C_RST}"
 echo -e "  URL: ${C_NEON_YELLOW}http://$IP:8888/server/online${C_RST}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ⏹️ Detener y Desinstalar Online App"
@@ -723,15 +801,19 @@ case $opt_app in
 1)
 if [ "$is_running" -gt 0 ]; then
 echo -e "${C_YELLOW}[+] Deteniendo Online App...${C_RST}"
+systemctl stop onlineapp.service 2>/dev/null
+systemctl disable onlineapp.service 2>/dev/null
+rm -f /etc/systemd/system/onlineapp.service
+systemctl daemon-reload 2>/dev/null
 screen -S onlineapp -X quit 2>/dev/null
 screen -wipe >/dev/null 2>&1
 sed -i '/onlineapp/d' /etc/autostart 2>/dev/null
 rm -rf /var/www/html/server
 echo -e "${C_GREEN}[✔] Online App detenido y archivos eliminados.${C_RST}"
 else
-echo -e "${C_YELLOW}[+] Instalando e Iniciando Online App...${C_RST}"
+echo -e "${C_YELLOW}[+] Instalando e Iniciando Online App (systemd)...${C_RST}"
 apt update -y >/dev/null 2>&1
-apt install apache2 screen -y >/dev/null 2>&1
+apt install apache2 -y >/dev/null 2>&1
 if ! grep -q "Listen 8888" /etc/apache2/ports.conf; then
 sed -i "s/Listen 80/Listen 8888/g" /etc/apache2/ports.conf 2>/dev/null
 sed -i "s/<VirtualHost \*:80>/<VirtualHost *:8888>/g" /etc/apache2/sites-available/000-default.conf 2>/dev/null
@@ -753,8 +835,10 @@ local drp=$(pgrep -f "dropbear" 2>/dev/null | wc -l)
 drp_count=$(( drp > 0 ? drp - 1 : 0 ))
 fi
 local online=$(( ssh_count + vpn_count + drp_count ))
-printf '{"onlines":"%s","limite":"2500"}\n' "$online" > "$OUT_DIR/online_app"
-printf '%s\n' "$online" > "$OUT_DIR/online"
+printf '{"onlines":"%s","limite":"2500"}
+' "$online" > "$OUT_DIR/online_app"
+printf '%s
+' "$online" > "$OUT_DIR/online"
 }
 while true; do
 fun_online
@@ -762,15 +846,34 @@ sleep 15
 done
 EOF
 chmod +x /etc/vps-manager/onlineapp.sh
-screen -dmS onlineapp bash /etc/vps-manager/onlineapp.sh
-mkdir -p /etc
-if ! grep -q "onlineapp" /etc/autostart 2>/dev/null; then
-echo "ps x | grep 'onlineapp' | grep -v 'grep' && echo 'ON' || screen -dmS onlineapp bash /etc/vps-manager/onlineapp.sh" >> /etc/autostart
-else
-sed -i '/onlineapp/d' /etc/autostart
-echo "ps x | grep 'onlineapp' | grep -v 'grep' && echo 'ON' || screen -dmS onlineapp bash /etc/vps-manager/onlineapp.sh" >> /etc/autostart
-fi
-echo -e "${C_GREEN}[✔] Online App activado correctamente.${C_RST}"
+
+# Servicio systemd
+cat > /etc/systemd/system/onlineapp.service << EOF
+[Unit]
+Description=VPS-Manager Online App (usuarios online)
+After=network-online.target apache2.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /etc/vps-manager/onlineapp.sh
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable onlineapp.service >/dev/null 2>&1
+systemctl restart onlineapp.service
+
+# Limpiar restos antiguos
+sed -i '/onlineapp/d' /etc/autostart 2>/dev/null
+screen -S onlineapp -X quit 2>/dev/null
+
+echo -e "${C_GREEN}[✔] Online App activado con systemd (se reinicia al arrancar el VPS).${C_RST}"
 echo -e "${C_NEON_YELLOW}URL de usuarios online para la App:${C_RST}"
 echo -e "${C_CYAN}http://$IP:8888/server/online${C_RST}"
 fi
@@ -779,10 +882,10 @@ read -p "Presione Enter para continuar..."
 2)
 if [ "$is_running" -gt 0 ]; then
 echo -e "${C_YELLOW}[+] Reiniciando Online App...${C_RST}"
-screen -S onlineapp -X quit 2>/dev/null
-sleep 1
-screen -dmS onlineapp bash /etc/vps-manager/onlineapp.sh
+systemctl restart onlineapp.service
 echo -e "${C_GREEN}[✔] Servicio reiniciado.${C_RST}"
+else
+echo -e "${C_RED}[!] Online App no está activo.${C_RST}"
 fi
 read -p "Presione Enter para continuar..."
 ;;
@@ -790,6 +893,7 @@ read -p "Presione Enter para continuar..."
 *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
 esac
 }
+
 
 menu_puertos() {
 clear
@@ -806,8 +910,14 @@ nombres=("SSH (OpenSSH)" "HTTP / Xray WS" "Xray SSL/VLESS" "DNS (SlowDNS)" "Open
 
 PORT_CHECK_STD=""
 PORT_CHECK_4G=""
-if [ -f /etc/autostart ]; then
+# Preferir archivos de configuración systemd
+[ -f /etc/vps-manager/checkuser_port ] && PORT_CHECK_STD=$(cat /etc/vps-manager/checkuser_port)
+[ -f /etc/vps-manager/checkuser4g_port ] && PORT_CHECK_4G=$(cat /etc/vps-manager/checkuser4g_port)
+# Fallback a autostart antiguo
+if [ -z "$PORT_CHECK_STD" ] && [ -f /etc/autostart ]; then
     PORT_CHECK_STD=$(grep -oE "check\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)
+fi
+if [ -z "$PORT_CHECK_4G" ] && [ -f /etc/autostart ]; then
     PORT_CHECK_4G=$(grep -oE "4gcheck\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)
 fi
 
