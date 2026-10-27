@@ -621,7 +621,7 @@ TOPBAR = f"""
 <header class="topbar"><div class="topbar-in">
   <div class="top-left">%%MENU%%<a class="brand" href="/">
     <span class="brand-ic">{I_SHIELD}</span>
-    <span><div class="brand-t">GOLBERT PANEL</div><div class="brand-s">Administración VPS</div></span>
+    <span><div class="brand-t">PANEL MANAGER</div><div class="brand-s">Administración VPS</div></span>
   </a></div>
   <div class="top-right">%%LOGOUT%%
   <div class="dd">
@@ -642,8 +642,8 @@ TOPBAR = f"""
 
 FOOTER = f"""
 <footer class="footer"><div class="footer-in">
-  <div class="footer-brand">{_svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>', 18)} GOLBERT VPS PANEL</div>
-  <div class="footer-live">Sistema operativo</div>
+  <div class="footer-brand">{_svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>', 18)} VPS MANAGER PANEL</div>
+  <div class="footer-live">v2.0</div>
   <div>© %%YEAR%% Todos los derechos reservados</div>
 </div></footer>
 """
@@ -662,7 +662,7 @@ def page(title, body, nav="", minimal=False):
 <header class="topbar topbar-minimal"><div class="topbar-in">
   <a class="brand" href="/">
     <span class="brand-ic">{I_SHIELD}</span>
-    <span><div class="brand-t">GOLBERT PANEL</div><div class="brand-s">Administración VPS</div></span>
+    <span><div class="brand-t">MANAGER PANEL</div><div class="brand-s">Administración VPS</div></span>
   </a>
   <div class="top-right">
     <div class="dd">
@@ -687,7 +687,7 @@ def page(title, body, nav="", minimal=False):
         "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<meta name='robots' content='noindex,nofollow'>"
-        f"<title>{escape(title)} · GOLBERT PANEL</title>"
+        f"<title>{escape(title)} · MANAGER PANEL</title>"
         + init +
         f"<style>{CSS}</style></head><body>"
         + topbar + nav + render_toasts() +
@@ -830,14 +830,43 @@ def get_domain():
     ip = ip.strip()
     return ip if HOST_RE.match(ip) else ""
 
-SERVICES = [
-    (22, "SSH (OpenSSH)"), (80, "HTTP / Xray WS"), (443, "SSL / VLESS / Trojan"), (53, "DNS (SlowDNS)"),
-    (1194, "OpenVPN TCP"), (2081, "OpenVPN Web"), (2083, "Trojan TLS"), (8080, "BHTTP Custom"),
-    (8880, "HCR Proxy PRO"), (8181, "Web Panel UI"), (7300, "BadVPN (Game 7300)"), (7200, "BadVPN (Game 7200)"),
-]
+def _read_port(filename, default):
+    """Lee un puerto configurado por el menú (/etc/vps-manager/<archivo>)."""
+    try:
+        with open(os.path.join(BASE_DIR, filename)) as f:
+            v = f.read().strip()
+        return int(v) if v.isdigit() else default
+    except Exception:
+        return default
+
+def services_list():
+    """Misma lista que menu_puertos() del menu.sh (incluye los puertos dinámicos)."""
+    items = [
+        (22, "SSH (OpenSSH)"), (80, "HTTP / Xray WS"), (443, "Xray SSL/VLESS"), (53, "DNS (SlowDNS)"),
+        (1194, "OpenVPN TCP"), (2081, "OpenVPN Web"), (2083, "Trojan TLS"),
+        (_read_port("bhttp_port", 8080), "BHTTP Custom"),
+        (_read_port("hcr_port", 8880), "HCR Proxy PRO"),
+        (_read_port("ssl_port", 444), "SSL / TLS Proxy"),
+        (8181, "Web Panel UI"),
+        (7100, "BadVPN (Game 7100)"), (7200, "BadVPN (Game 7200)"), (7300, "BadVPN (Game 7300)"),
+        (25000, "UDP Custom"), (5432, "CheckUser API"), (8888, "Online App"),
+    ]
+    # CheckUser: el puerto se lee de /etc/autostart igual que hace el menú
+    try:
+        with open("/etc/autostart") as f:
+            txt = f.read()
+        m_std = re.search(r"(?<!4g)check\.py (\d+)", txt)
+        m_4g = re.search(r"4gcheck\.py (\d+)", txt)
+        if m_std:
+            items.append((int(m_std.group(1)), "CheckUser Estándar"))
+        if m_4g:
+            items.append((int(m_4g.group(1)), "CheckUser Conecta4G"))
+    except Exception:
+        pass
+    return items
 
 def services_status():
-    """Mismos servicios que el 'Monitor de Puertos' del menu.sh (opción 5)."""
+    """Estado de puertos y servicios, igual que el Monitor de Puertos del menu.sh."""
     listening = set()
     udp = set()
     _, out = run(["ss", "-lntuH"])
@@ -849,11 +878,13 @@ def services_status():
                 listening.add(int(port))
                 if cols[0].startswith("udp"):
                     udp.add(int(port))
-    items = [{"port": str(p), "name": n, "active": p in listening} for p, n in SERVICES]
-    udp_custom = run(["systemctl", "is-active", "--quiet", "udp-custom"])[0] == 0 or 25000 in udp
+    items = [{"port": str(p), "name": n, "active": p in listening} for p, n in services_list()]
+
     zivpn = run(["systemctl", "is-active", "--quiet", "zivpn.service"])[0] == 0 or 5667 in udp
-    items.append({"port": "25000", "name": "UDP Custom", "active": udp_custom})
+    _, udp_procs = run(["ss", "-lnup"])
+    hysteria = run(["systemctl", "is-active", "--quiet", "hysteria.service"])[0] == 0 or "hysteria" in udp_procs
     items.append({"port": "6000-19999", "name": "Zivpn UDP", "active": zivpn})
+    items.append({"port": "Hysteria v1", "name": "Hysteria QUIC", "active": hysteria})
     return items
 
 def post_btn(action_url, label, cls, confirm=None):
@@ -1001,8 +1032,9 @@ def index():
     for sv in svc_items:
         svc_cls = "c-ok" if sv["active"] else "c-danger"
         svc_txt = "ACTIVO" if sv["active"] else "INACTIVO"
+        svc_sub = escape(("Puerto " if sv["port"][:1].isdigit() else "") + sv["port"])
         svc_cards += (f'<div class="card svc"><div><div class="svc-name">{escape(sv["name"])}</div>'
-                      f'<div class="u-sub">Puerto {escape(sv["port"])}</div></div>'
+                      f'<div class="u-sub">{svc_sub}</div></div>'
                       f'<span class="dot {svc_cls}">{svc_txt}</span></div>')
 
     empty_res = '<div class="empty">No hay revendedores registrados.</div>'
