@@ -167,4 +167,4 @@ sleep 2
 
 # Limpiar pantalla e iniciar el menú automáticamente
 clear
-menu.
+menu
