@@ -23,8 +23,9 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # los formularios son pequeños
 #  CONFIGURACIÓN  (se recomienda definir PANEL_USER / PANEL_PASS
 #  como variables de entorno en vez de dejarlos en el código)
 # ──────────────────────────────────────────────────────────────
-USER = os.environ.get("PANEL_USER", "CHADGT")
-PASS = os.environ.get("PANEL_PASS", "123456")
+# Valores iniciales solo si aún no hay archivo de auth hasheado
+_DEFAULT_USER = os.environ.get("PANEL_USER", "CHADGT")
+_DEFAULT_PASS = os.environ.get("PANEL_PASS", "123456")
 HOST = os.environ.get("PANEL_HOST", "0.0.0.0")   # usa 127.0.0.1 si pones Nginx delante
 PORT = int(os.environ.get("PANEL_PORT", "8181"))
 
@@ -32,7 +33,90 @@ BASE_DIR = "/etc/vps-manager"
 BOT_DIR = os.path.join(BASE_DIR, "telegram_bot")
 V2_FILE = os.path.join(BASE_DIR, "v2ray_users.json")
 AUDIT_FILE = os.path.join(BASE_DIR, "panel_audit.log")
+AUTH_FILE = os.path.join(BASE_DIR, "panel_auth.json")
 SSHD_CONFIG = "/etc/ssh/sshd_config"
+
+# Compatibilidad: código antiguo referenciaba USER/PASS
+USER = _DEFAULT_USER
+PASS = _DEFAULT_PASS
+
+# ── Auth hasheada (PBKDF2-SHA256) ─────────────────────────────
+_PBKDF2_ITERS = 200_000
+
+
+def _hash_password(password: str) -> str:
+    """Devuelve 'pbkdf2_sha256$iters$salt_b64$hash_b64' (nunca texto plano)."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERS)
+    return "pbkdf2_sha256$%d$%s$%s" % (
+        _PBKDF2_ITERS,
+        base64.b64encode(salt).decode("ascii"),
+        base64.b64encode(dk).decode("ascii"),
+    )
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """Compara contraseña con hash PBKDF2 o, en legado, con texto plano."""
+    if not stored:
+        return False
+    if stored.startswith("pbkdf2_sha256$"):
+        try:
+            _, iters_s, salt_b64, hash_b64 = stored.split("$", 3)
+            iters = int(iters_s)
+            salt = base64.b64decode(salt_b64.encode("ascii"))
+            expected = base64.b64decode(hash_b64.encode("ascii"))
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+            return hmac.compare_digest(dk, expected)
+        except Exception:
+            return False
+    # Legado: texto plano (solo hasta migrar)
+    return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
+
+
+def _load_auth_file():
+    """Lee {user, hash} desde AUTH_FILE. None si no existe o es inválido."""
+    try:
+        with open(AUTH_FILE) as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("user") and data.get("hash"):
+            return str(data["user"]), str(data["hash"])
+    except Exception:
+        pass
+    return None
+
+
+def _save_auth_file(username: str, password: str):
+    """Guarda usuario + hash PBKDF2 (modo 0600)."""
+    os.makedirs(BASE_DIR, exist_ok=True)
+    payload = {
+        "user": username,
+        "hash": _hash_password(password),
+        "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    tmp = AUTH_FILE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, AUTH_FILE)
+    try:
+        os.chmod(AUTH_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def get_panel_user() -> str:
+    auth = _load_auth_file()
+    if auth:
+        return auth[0]
+    return _DEFAULT_USER
+
+
+def get_panel_secret_material():
+    """(username, stored_secret) — stored_secret es hash o pass legado."""
+    auth = _load_auth_file()
+    if auth:
+        return auth
+    return _DEFAULT_USER, _DEFAULT_PASS
 
 # Sesión (cookie firmada). Si defines PANEL_SECRET las sesiones sobreviven a reinicios.
 app.secret_key = os.environ.get("PANEL_SECRET") or secrets.token_hex(32)
@@ -118,9 +202,19 @@ LOCK_SECS = 600
 FAILS = {}  # ip -> (intentos, primer_intento)
 
 def check_auth(username, password):
-    ok_u = hmac.compare_digest(username.encode(), USER.encode())
-    ok_p = hmac.compare_digest(password.encode(), PASS.encode())
-    return ok_u and ok_p
+    stored_user, stored_secret = get_panel_secret_material()
+    ok_u = hmac.compare_digest(username.encode("utf-8"), stored_user.encode("utf-8"))
+    ok_p = _verify_password(password, stored_secret)
+    if ok_u and ok_p:
+        # Migración automática: si aún era texto plano (env), guardar hash
+        if not stored_secret.startswith("pbkdf2_sha256$"):
+            try:
+                _save_auth_file(stored_user, password)
+                audit("AUTH_MIGRATED_TO_HASH")
+            except Exception:
+                pass
+        return True
+    return False
 
 def is_locked_out(ip):
     entry = FAILS.get(ip)
@@ -381,6 +475,11 @@ input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-m
 
 .actions form{margin:0;display:flex}.actions form .btn,.actions>.btn{width:100%}
 .actions.two{grid-template-columns:1fr 1fr}
+.actions.four{grid-template-columns:repeat(auto-fit,minmax(90px,1fr))}
+.mon-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px}
+.mon-row span{color:var(--muted)}
+.share-card{margin-bottom:18px;border-color:var(--accent)}
+.share-card textarea{color:var(--text);min-height:180px}
 .mono{font-family:var(--mono);font-size:13px}
 
 /* ───── MENÚ LATERAL DESPLEGABLE ───── */
@@ -569,14 +668,18 @@ JS = """
   var navBtns=document.querySelectorAll('[data-nav]'), views=document.querySelectorAll('.view');
   function showView(v){
     if(!document.querySelector('[data-nav="'+v+'"]')) v='all';
-    views.forEach(function(s){s.hidden=!(v==='all'?s.dataset.view!=='services':s.dataset.view===v);});
+    views.forEach(function(s){
+      if(v==='all') s.hidden = (s.dataset.view==='services' || s.dataset.view==='monitor');
+      else s.hidden = (s.dataset.view !== v);
+    });
     navBtns.forEach(function(b){
       if(b.dataset.nav===v) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
     });
     document.querySelectorAll('[data-stats]').forEach(function(s){s.hidden=!(v==='all'||s.dataset.stats===v);});
-    var sw=document.getElementById('searchWrap'); if(sw) sw.style.display=(v==='resellers'||v==='services')?'none':'';
+    var sw=document.getElementById('searchWrap'); if(sw) sw.style.display=(v==='resellers'||v==='services'||v==='monitor')?'none':'';
     try{localStorage.setItem('gp-view',v);}catch(e){}
     if(window.history&&history.replaceState) history.replaceState(null,'','#'+v);
+    if(v==='monitor') startStats(); else stopStats();
   }
   if(navBtns.length){
     navBtns.forEach(function(b){b.addEventListener('click',function(){showView(b.dataset.nav);setDrawer(false);window.scrollTo(0,0);});});
@@ -604,6 +707,20 @@ JS = """
     f.addEventListener('submit',function(e){if(!confirm(f.dataset.confirm))e.preventDefault();});
   });
 
+  // ── Editar SSH ──
+  document.querySelectorAll('[data-open-edit]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var u=b.dataset.user, form=document.getElementById('formEdit');
+      if(!form) return;
+      form.action='/edit_ssh/'+encodeURIComponent(u);
+      document.getElementById('editUserLabel').value=u;
+      document.getElementById('eDays').value=b.dataset.days||'30';
+      document.getElementById('eLimit').value=b.dataset.limit||'1';
+      document.getElementById('ePass').value='';
+      openModal('modalEdit');
+    });
+  });
+
   // ── TOASTS: auto-cierre ──
   var tc=document.getElementById('toastContainer');
   if(tc){
@@ -614,7 +731,74 @@ JS = """
       },4200);
     });
   }
+
+  // ── Monitor VPS (poll + gráfica simple de red) ──
+  var statsTimer=null, netHist=[], lastNet=null;
+  function hb(n){
+    n=Number(n)||0; var u=['B','KB','MB','GB','TB'];
+    for(var i=0;i<u.length;i++){ if(n<1024||i===u.length-1) return (i?n.toFixed(1):Math.round(n))+' '+u[i]; n/=1024; }
+  }
+  function barColor(pct){
+    if(pct>=90) return 'var(--danger)';
+    if(pct>=70) return 'var(--warn)';
+    return 'var(--ok)';
+  }
+  function paintNetChart(){
+    var c=document.getElementById('netChart'); if(!c||!netHist.length) return;
+    var ctx=c.getContext('2d'), w=c.width, h=c.height, max=1;
+    netHist.forEach(function(p){ if(p.rx>max)max=p.rx; if(p.tx>max)max=p.tx; });
+    ctx.clearRect(0,0,w,h);
+    function line(key,color){
+      ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=2;
+      netHist.forEach(function(p,i){
+        var x=i/(Math.max(netHist.length-1,1))*(w-8)+4;
+        var y=h-4-(p[key]/max)*(h-12);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+    }
+    line('rx','#22c55e'); line('tx','#4f8cff');
+  }
+  function applyStats(s){
+    var set=function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+    set('mCpu', s.cpu+'%'); set('mCpu2', s.cpu+'%');
+    set('mRam', s.ram_pct+'%'); set('mRam2', s.ram_pct+'%');
+    set('mRamTxt', hb(s.ram_used)+' / '+hb(s.ram_total));
+    set('mDisk', s.disk_pct+'%'); set('mDisk2', s.disk_pct+'%');
+    set('mDiskTxt', hb(s.disk_used)+' / '+hb(s.disk_total));
+    set('mUp', s.uptime_human);
+    set('mLoad', s.load1.toFixed(2)+' · '+s.load5.toFixed(2)+' · '+s.load15.toFixed(2));
+    set('mRx', hb(s.net_rx)); set('mTx', hb(s.net_tx)); set('mNet', hb(s.net_rx+s.net_tx));
+    [['bCpu',s.cpu],['bRam',s.ram_pct],['bDisk',s.disk_pct]].forEach(function(x){
+      var el=document.getElementById(x[0]); if(!el) return;
+      el.style.setProperty('--w', x[1]+'%');
+      el.style.background=barColor(x[1]);
+    });
+    var rateRx=0, rateTx=0;
+    if(lastNet && s.ts>lastNet.ts){
+      var dt=Math.max(1, s.ts-lastNet.ts);
+      rateRx=Math.max(0,(s.net_rx-lastNet.rx)/dt);
+      rateTx=Math.max(0,(s.net_tx-lastNet.tx)/dt);
+    }
+    lastNet={rx:s.net_rx, tx:s.net_tx, ts:s.ts};
+    netHist.push({rx:rateRx, tx:rateTx});
+    if(netHist.length>40) netHist.shift();
+    paintNetChart();
+  }
+  function fetchStats(){
+    fetch('/api/stats',{credentials:'same-origin'}).then(function(r){return r.json();}).then(applyStats).catch(function(){});
+  }
+  function startStats(){
+    if(statsTimer) return;
+    fetchStats();
+    statsTimer=setInterval(fetchStats, 5000);
+  }
+  function stopStats(){ if(statsTimer){ clearInterval(statsTimer); statsTimer=null; } }
+  var btnR=document.getElementById('statsRefresh');
+  if(btnR) btnR.addEventListener('click', fetchStats);
+
 })();
+
 """
 
 TOPBAR = f"""
@@ -642,8 +826,8 @@ TOPBAR = f"""
 
 FOOTER = f"""
 <footer class="footer"><div class="footer-in">
-  <div class="footer-brand">{_svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>', 18)} VPS MANAGER PANEL</div>
-  <div class="footer-live">v2.0</div>
+  <div class="footer-brand">{_svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>', 18)} VPS MANAGER</div>
+  <div class="footer-live">v2.1</div>
   <div>© %%YEAR%% Todos los derechos reservados</div>
 </div></footer>
 """
@@ -851,7 +1035,6 @@ def services_list():
         (7100, "BadVPN (Game 7100)"), (7200, "BadVPN (Game 7200)"), (7300, "BadVPN (Game 7300)"),
         (25000, "UDP Custom"), (5432, "CheckUser API"), (8888, "Online App"),
     ]
-    # CheckUser: el puerto se lee de /etc/autostart igual que hace el menú
     try:
         with open("/etc/autostart") as f:
             txt = f.read()
@@ -864,6 +1047,8 @@ def services_list():
     except Exception:
         pass
     return items
+
+
 
 def services_status():
     """Estado de puertos y servicios, igual que el Monitor de Puertos del menu.sh."""
@@ -892,6 +1077,153 @@ def post_btn(action_url, label, cls, confirm=None):
     return (f'<form method="POST" action="{escape(action_url)}"{c}>{csrf_input()}'
             f'<button type="submit" class="btn {cls}">{label}</button></form>')
 
+
+# ──────────────────────────────────────────────────────────────
+#  MONITOR DEL SISTEMA (CPU, RAM, disco, uptime, red)
+# ──────────────────────────────────────────────────────────────
+def _read_cpu_times():
+    try:
+        with open("/proc/stat") as f:
+            parts = f.readline().split()
+        nums = [int(x) for x in parts[1:9]]
+        idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+        total = sum(nums)
+        return idle, total
+    except Exception:
+        return 0, 0
+
+
+def system_stats():
+    """Métricas actuales del VPS para el dashboard."""
+    stats = {
+        "cpu": 0.0,
+        "ram_used": 0, "ram_total": 0, "ram_pct": 0.0,
+        "disk_used": 0, "disk_total": 0, "disk_pct": 0.0,
+        "uptime_secs": 0, "uptime_human": "—",
+        "net_rx": 0, "net_tx": 0,
+        "load1": 0.0, "load5": 0.0, "load15": 0.0,
+        "ts": int(time.time()),
+    }
+    try:
+        idle1, total1 = _read_cpu_times()
+        time.sleep(0.12)
+        idle2, total2 = _read_cpu_times()
+        dt = total2 - total1
+        di = idle2 - idle1
+        if dt > 0:
+            stats["cpu"] = round(max(0.0, min(100.0, 100.0 * (1.0 - di / dt))), 1)
+    except Exception:
+        pass
+    try:
+        mem = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    mem[k.strip()] = int(v.strip().split()[0])
+        total = mem.get("MemTotal", 0)
+        avail = mem.get("MemAvailable", mem.get("MemFree", 0))
+        used = max(0, total - avail)
+        stats["ram_total"] = total * 1024
+        stats["ram_used"] = used * 1024
+        stats["ram_pct"] = round(100.0 * used / total, 1) if total else 0.0
+    except Exception:
+        pass
+    try:
+        st = os.statvfs("/")
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        used = total - free
+        stats["disk_total"] = total
+        stats["disk_used"] = used
+        stats["disk_pct"] = round(100.0 * used / total, 1) if total else 0.0
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            secs = float(f.read().split()[0])
+        stats["uptime_secs"] = int(secs)
+        d = int(secs // 86400)
+        h = int((secs % 86400) // 3600)
+        m = int((secs % 3600) // 60)
+        if d > 0:
+            stats["uptime_human"] = f"{d}d {h}h {m}m"
+        elif h > 0:
+            stats["uptime_human"] = f"{h}h {m}m"
+        else:
+            stats["uptime_human"] = f"{m}m"
+    except Exception:
+        pass
+    try:
+        with open("/proc/loadavg") as f:
+            a, b, c = f.read().split()[:3]
+            stats["load1"] = float(a)
+            stats["load5"] = float(b)
+            stats["load15"] = float(c)
+    except Exception:
+        pass
+    try:
+        rx = tx = 0
+        with open("/proc/net/dev") as f:
+            for line in f:
+                if ":" not in line:
+                    continue
+                name, rest = line.split(":", 1)
+                if name.strip() == "lo":
+                    continue
+                cols = rest.split()
+                if len(cols) >= 9:
+                    rx += int(cols[0])
+                    tx += int(cols[8])
+        stats["net_rx"] = rx
+        stats["net_tx"] = tx
+    except Exception:
+        pass
+    return stats
+
+
+def human_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def user_exp_info(u, shadow, today):
+    """(días_str, badge, badge_cls, dias_int_or_None, exp_date_str)."""
+    pw_hash, exp_field = shadow.get(u, ("", ""))
+    if not exp_field.strip().lstrip("-").isdigit():
+        return "Ilimitado", "CLIENTE", "c-ok", None, "Ilimitado"
+    dias = int(exp_field) - today
+    exp_date = (datetime.fromtimestamp(0) + timedelta(days=int(exp_field))).strftime("%Y-%m-%d")
+    if dias <= 0:
+        return "Expirado", "EXPIRADO", "c-danger", dias, exp_date
+    if dias <= 2:
+        return f"{dias} Días", "DEMO", "c-warn", dias, exp_date
+    return f"{dias} Días", "CLIENTE", "c-ok", dias, exp_date
+
+
+def build_client_text(u, password, days_str, limit, exp_date):
+    """Texto listo para enviar al cliente (SSH)."""
+    dom = get_domain() or "TU_IP_O_DOMINIO"
+    pass_line = password if password else "(la contraseña que configuraste)"
+    return (
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"  DATOS DE ACCESO SSH\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Host / IP : {dom}\n"
+        f"Puerto    : 22\n"
+        f"Usuario   : {u}\n"
+        f"Clave     : {pass_line}\n"
+        f"Límite    : {limit} conexión(es)\n"
+        f"Vence     : {exp_date} ({days_str})\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Apps: HTTP Injector · Stickies · NapsternetV · v2rayNG\n"
+    )
+
+
 # ──────────────────────────────────────────────────────────────
 #  RUTAS
 # ──────────────────────────────────────────────────────────────
@@ -911,18 +1243,10 @@ def index():
 
     for u in users:
         total_users += 1
-        pw_hash, exp_field = shadow.get(u, ("", ""))
-
-        if not exp_field.strip().lstrip("-").isdigit():
-            dias_restantes = "Ilimitado"; badge = "CLIENTE"; badge_cls = "c-ok"
-        else:
-            dias = int(exp_field) - today
-            if dias <= 0:
-                dias_restantes = "Expirado"; expirados_count += 1; badge = "EXPIRADO"; badge_cls = "c-danger"
-            elif dias <= 2:
-                dias_restantes = f"{dias} Días"; badge = "DEMO"; badge_cls = "c-warn"
-            else:
-                dias_restantes = f"{dias} Días"; badge = "CLIENTE"; badge_cls = "c-ok"
+        pw_hash, _ = shadow.get(u, ("", ""))
+        dias_restantes, badge, badge_cls, dias_int, exp_date = user_exp_info(u, shadow, today)
+        if badge == "EXPIRADO":
+            expirados_count += 1
 
         is_locked = pw_hash.startswith("!")
         conns = conn_map.get(u, 0)
@@ -951,6 +1275,9 @@ def index():
         renew_btn = post_btn(f"/action/renew/{uq}", "+30 días", "btn-primary")
         delete_btn = post_btn(f"/action/delete/{uq}", "Eliminar", "btn-ghost", "¿Eliminar este usuario?")
         name = escape(u)
+        days_val = max(1, dias_int) if dias_int is not None and dias_int > 0 else 30
+        limit_val = limit if limit > 0 else 1
+        client_txt = escape(build_client_text(u, "", dias_restantes, limit if limit > 0 else "∞", exp_date), quote=True)
         user_cards += f"""
         <div class="card" data-name="{name.lower()}">
             <div class="u-head">
@@ -962,7 +1289,12 @@ def index():
             <div class="row"><span>Conexiones</span><span class="conn {conn_cls}">{conn_txt}</span></div>
             <div class="meter {conn_cls}"><i style="--w:{pct}%"></i></div>
             <div class="row"><span>Tiempo restante</span><strong>{dias_restantes}</strong></div>
-            <div class="actions">{renew_btn}{action_btn}{delete_btn}</div>
+            <div class="actions four">
+                <button type="button" class="btn btn-ghost" data-open-edit
+                    data-user="{name}" data-days="{days_val}" data-limit="{limit_val}">Editar</button>
+                <button type="button" class="btn btn-primary" data-copy="{client_txt}">Datos</button>
+                {renew_btn}{action_btn}{delete_btn}
+            </div>
         </div>
         """
 
@@ -1032,7 +1364,7 @@ def index():
     for sv in svc_items:
         svc_cls = "c-ok" if sv["active"] else "c-danger"
         svc_txt = "ACTIVO" if sv["active"] else "INACTIVO"
-        svc_sub = escape(("Puerto " if sv["port"][:1].isdigit() else "") + sv["port"])
+        svc_sub = escape(("Puerto " if str(sv["port"])[:1].isdigit() else "") + str(sv["port"]))
         svc_cards += (f'<div class="card svc"><div><div class="svc-name">{escape(sv["name"])}</div>'
                       f'<div class="u-sub">{svc_sub}</div></div>'
                       f'<span class="dot {svc_cls}">{svc_txt}</span></div>')
@@ -1057,15 +1389,48 @@ def index():
             <button type="button" class="nav-item" data-nav="v2ray">{I_BOLT}<span>Cuentas V2Ray</span><span class="n">{len(v2_items)}</span></button>
             <button type="button" class="nav-item" data-nav="resellers">{I_RESELL}<span>Revendedores</span></button>
             <div class="side-title" style="margin-top:10px">Sistema</div>
+            <button type="button" class="nav-item" data-nav="monitor">{I_ONLINE}<span>Monitor VPS</span></button>
             <button type="button" class="nav-item" data-nav="services">{I_SERVER}<span>Servicios activos</span></button>
             <div class="drawer-foot">
-                <div style="margin-bottom:10px">Sesión: <strong>{escape(USER)}</strong></div>
+                <div style="margin-bottom:10px">Sesión: <strong>{escape(get_panel_user())}</strong></div>
+                <button type="button" class="btn btn-ghost btn-block" data-open="modalPass" style="margin-bottom:8px">Cambiar contraseña</button>
                 <form method="POST" action="/logout">{csrf_input()}<button type="submit" class="btn btn-danger btn-block">{I_LOGOUT} Cerrar sesión</button></form>
             </div>
         </aside>
     """
 
+    # Datos listos para el cliente (tras crear/editar)
+    share_html = ""
+    share_txt = session.pop("share_text", None)
+    share_user = session.pop("share_user", None)
+    if share_txt:
+        share_esc = escape(share_txt)
+        share_attr = escape(share_txt, quote=True)
+        share_html = f"""
+        <div class="card share-card" id="shareCard">
+            <div class="modal-head" style="margin-bottom:10px">
+                <h3>Datos para el cliente{(' · ' + escape(str(share_user))) if share_user else ''}</h3>
+                <button type="button" class="modal-x" onclick="document.getElementById('shareCard').remove()" aria-label="Cerrar">×</button>
+            </div>
+            <textarea readonly id="shareBox" rows="12">{share_esc}</textarea>
+            <div class="result-actions">
+                <button type="button" class="btn btn-primary" data-copy="{share_attr}">Copiar texto</button>
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('shareCard').remove()">Cerrar</button>
+            </div>
+        </div>
+        """
+
+    # Stats iniciales del monitor
+    st = system_stats()
+    def bar_cls(pct):
+        if pct >= 90:
+            return "c-danger"
+        if pct >= 70:
+            return "c-warn"
+        return "c-ok"
+
     body = f"""
+        {share_html}
         <section class="stats" data-stats="ssh">
             <div class="stat ok"><div class="stat-ic">{I_ONLINE}</div><div><div class="stat-num">{online_count}</div><div class="stat-lbl">En línea</div></div></div>
             <div class="stat warn"><div class="stat-ic">{I_CLOCK}</div><div><div class="stat-num">{expirados_count}</div><div class="stat-lbl">Expirados</div></div></div>
@@ -1092,6 +1457,47 @@ def index():
                     <div class="full modal-foot">
                         <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
                         <button type="submit" class="btn btn-success">Crear SSH</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal" id="modalEdit" role="dialog" aria-modal="true" aria-labelledby="tEdit">
+            <form class="modal-box" id="formEdit" method="POST" autocomplete="off">
+                {csrf_input()}
+                <div class="modal-head"><h3 id="tEdit">Editar cuenta SSH</h3><button type="button" class="modal-x" data-close aria-label="Cerrar">×</button></div>
+                <div class="fields">
+                    <div class="full"><label>Usuario</label><input type="text" id="editUserLabel" disabled></div>
+                    <div class="full"><label for="ePass">Nueva contraseña <span class="muted">(dejar vacío = no cambiar)</span></label>
+                        <input id="ePass" type="password" name="pass" placeholder="Opcional" minlength="4" maxlength="64"></div>
+                    <div><label for="eDays">Días restantes (exactos)</label>
+                        <input id="eDays" type="number" name="days" min="1" max="3650" required></div>
+                    <div><label for="eLimit">Límite de conexiones</label>
+                        <input id="eLimit" type="number" name="limit" min="1" max="1000" required></div>
+                    <div class="full modal-foot">
+                        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal" id="modalPass" role="dialog" aria-modal="true" aria-labelledby="tPass">
+            <form class="modal-box" action="/change_password" method="POST" autocomplete="off">
+                {csrf_input()}
+                <div class="modal-head"><h3 id="tPass">Cambiar contraseña del panel</h3><button type="button" class="modal-x" data-close aria-label="Cerrar">×</button></div>
+                <div class="fields">
+                    <div class="full"><label for="curPass">Contraseña actual</label>
+                        <input id="curPass" type="password" name="current" required autocomplete="current-password"></div>
+                    <div class="full"><label for="newPass">Nueva contraseña</label>
+                        <input id="newPass" type="password" name="new" minlength="8" maxlength="64" required autocomplete="new-password"
+                               placeholder="Mínimo 8 caracteres"></div>
+                    <div class="full"><label for="newPass2">Repetir nueva contraseña</label>
+                        <input id="newPass2" type="password" name="confirm" minlength="8" maxlength="64" required autocomplete="new-password"></div>
+                    <p class="muted" style="margin:0;font-size:12px;grid-column:1/-1">Se guarda con hash PBKDF2-SHA256 en el servidor (nunca en texto plano).</p>
+                    <div class="full modal-foot">
+                        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
                     </div>
                 </div>
             </form>
@@ -1130,6 +1536,52 @@ def index():
         <div class="view" data-view="resellers">
             <div class="section-head"><h2 class="section-title">Revendedores</h2></div>
             <section class="grid">{res_html}</section>
+        </div>
+
+        <div class="view" data-view="monitor">
+            <div class="section-head">
+                <h2 class="section-title">Monitor del VPS</h2>
+                <button type="button" class="btn btn-ghost" id="statsRefresh">Actualizar</button>
+            </div>
+            <div class="stats" id="monStats">
+                <div class="stat accent"><div class="stat-ic">{I_BOLT22}</div><div>
+                    <div class="stat-num" id="mCpu">{st['cpu']}%</div>
+                    <div class="stat-lbl">CPU · load {st['load1']:.2f}</div>
+                </div></div>
+                <div class="stat ok"><div class="stat-ic">{I_SERVER}</div><div>
+                    <div class="stat-num" id="mRam">{st['ram_pct']}%</div>
+                    <div class="stat-lbl">RAM · <span id="mRamTxt">{human_bytes(st['ram_used'])} / {human_bytes(st['ram_total'])}</span></div>
+                </div></div>
+                <div class="stat warn"><div class="stat-ic">{I_GRID}</div><div>
+                    <div class="stat-num" id="mDisk">{st['disk_pct']}%</div>
+                    <div class="stat-lbl">Disco · <span id="mDiskTxt">{human_bytes(st['disk_used'])} / {human_bytes(st['disk_total'])}</span></div>
+                </div></div>
+                <div class="stat ok"><div class="stat-ic">{I_CLOCK}</div><div>
+                    <div class="stat-num" id="mUp" style="font-size:20px">{st['uptime_human']}</div>
+                    <div class="stat-lbl">Uptime</div>
+                </div></div>
+            </div>
+            <div class="grid" style="margin-top:14px">
+                <div class="card">
+                    <h3>Uso de recursos</h3>
+                    <div class="mon-row"><span>CPU</span><strong id="mCpu2">{st['cpu']}%</strong></div>
+                    <div class="meter {bar_cls(st['cpu'])}"><i id="bCpu" style="--w:{st['cpu']}%"></i></div>
+                    <div class="mon-row"><span>RAM</span><strong id="mRam2">{st['ram_pct']}%</strong></div>
+                    <div class="meter {bar_cls(st['ram_pct'])}"><i id="bRam" style="--w:{st['ram_pct']}%"></i></div>
+                    <div class="mon-row"><span>Disco</span><strong id="mDisk2">{st['disk_pct']}%</strong></div>
+                    <div class="meter {bar_cls(st['disk_pct'])}"><i id="bDisk" style="--w:{st['disk_pct']}%"></i></div>
+                    <div class="mon-row" style="margin-top:12px"><span>Load average</span>
+                        <strong id="mLoad">{st['load1']:.2f} · {st['load5']:.2f} · {st['load15']:.2f}</strong></div>
+                </div>
+                <div class="card">
+                    <h3>Tráfico de red (total)</h3>
+                    <div class="mon-row"><span>Recibido (RX)</span><strong id="mRx">{human_bytes(st['net_rx'])}</strong></div>
+                    <div class="mon-row"><span>Enviado (TX)</span><strong id="mTx">{human_bytes(st['net_tx'])}</strong></div>
+                    <div class="mon-row"><span>Total</span><strong id="mNet">{human_bytes(st['net_rx'] + st['net_tx'])}</strong></div>
+                    <p class="muted" style="margin:14px 0 0;font-size:13px">Los contadores son acumulados desde el arranque del sistema. La vista se actualiza sola cada 5 s.</p>
+                    <canvas id="netChart" width="400" height="120" style="width:100%;margin-top:12px;border-radius:8px;background:var(--surface-2)"></canvas>
+                </div>
+            </div>
         </div>
 
         <div class="view" data-view="services">
@@ -1196,7 +1648,9 @@ def create_ssh():
         banner_warn = " (aviso en banner)"
 
     audit(f"CREATE_SSH {u} dias={d} limite={l}")
-    toast("ok", f"Usuario SSH '{u}' creado con éxito{banner_warn}.")
+    session["share_user"] = u
+    session["share_text"] = build_client_text(u, p, f"{d} Días", l, exp_date)
+    toast("ok", f"Usuario SSH '{u}' creado con éxito{banner_warn}. Copia los datos abajo.")
     return redirect(url_for('index'))
 
 @app.route('/create_v2ray', methods=['POST'])
@@ -1269,12 +1723,118 @@ def action(cmd, user):
         edit_sshd_config(lambda txt: strip_match(txt, user))
         toast("ok", f"Usuario '{user}' eliminado.")
     elif cmd == "renew":
-        new_exp = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        # Suma 30 días al tiempo restante (no reinicia desde hoy)
+        today = int(time.time() // 86400)
+        shadow = shadow_info()
+        _, exp_field = shadow.get(user, ("", ""))
+        if exp_field.strip().lstrip("-").isdigit():
+            current_exp = int(exp_field)
+            base = max(current_exp, today)  # si ya expiró, parte de hoy
+            new_days_epoch = base + 30
+        else:
+            new_days_epoch = today + 30
+        new_exp = (datetime.fromtimestamp(0) + timedelta(days=new_days_epoch)).strftime("%Y-%m-%d")
         run(["chage", "-E", new_exp, user])
-        toast("ok", f"Usuario '{user}' renovado 30 días más.")
+        # Actualizar banner si existe
+        try:
+            limit = read_limit(user)
+            dias_left = new_days_epoch - today
+            banner = write_banner(user, new_exp, str(dias_left), limit)
+            edit_sshd_config(lambda txt: strip_match(txt, user).rstrip("\n") + f"\n\nMatch User {user}\nBanner {banner}\n")
+        except Exception:
+            pass
+        toast("ok", f"Usuario '{user}' renovado: +30 días (vence {new_exp}).")
 
     audit(f"{cmd.upper()} {user}")
     return redirect(url_for('index'))
+
+
+@app.route('/edit_ssh/<user>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def edit_ssh(user):
+    if user not in managed_users():
+        toast("err", "Usuario inexistente o no gestionable.")
+        return redirect(url_for('index'))
+
+    p = (request.form.get("pass") or "").strip()
+    d = (request.form.get("days") or "").strip()
+    l = (request.form.get("limit") or "").strip()
+    changed = []
+
+    # Contraseña (opcional)
+    if p:
+        if not (4 <= len(p) <= 64) or any(ord(c) < 32 or ord(c) == 127 for c in p):
+            toast("err", "La contraseña debe tener entre 4 y 64 caracteres, sin saltos de línea.")
+            return redirect(url_for('index'))
+        code, out = run(["chpasswd"], stdin=f"{user}:{p}\n")
+        if code != 0:
+            toast("err", f"No se pudo cambiar la contraseña: {out}")
+            return redirect(url_for('index'))
+        changed.append("contraseña")
+        session["share_pass"] = p  # solo para el texto de datos de esta sesión
+
+    # Días exactos restantes (desde hoy)
+    if d:
+        if not (d.isdigit() and 1 <= int(d) <= 3650):
+            toast("err", "Los días deben ser un número entre 1 y 3650.")
+            return redirect(url_for('index'))
+        exp_date = (datetime.now() + timedelta(days=int(d))).strftime("%Y-%m-%d")
+        code, out = run(["chage", "-E", exp_date, user])
+        if code != 0:
+            toast("err", f"No se pudo cambiar la expiración: {out}")
+            return redirect(url_for('index'))
+        changed.append(f"vencimiento ({d} días → {exp_date})")
+    else:
+        # conservar fecha actual para el banner
+        today = int(time.time() // 86400)
+        _, _, _, dias_int, exp_date = user_exp_info(user, shadow_info(), today)
+        d = str(max(1, dias_int) if dias_int is not None else 30)
+        if exp_date == "Ilimitado":
+            exp_date = (datetime.now() + timedelta(days=int(d))).strftime("%Y-%m-%d")
+
+    # Límite de conexiones
+    if l:
+        if not (l.isdigit() and 1 <= int(l) <= 1000):
+            toast("err", "El límite de conexiones debe ser un número entre 1 y 1000.")
+            return redirect(url_for('index'))
+        try:
+            with open(os.path.join(BASE_DIR, f"limite_{user}"), "w") as f:
+                f.write(l + "\n")
+            changed.append(f"límite={l}")
+        except Exception as e:
+            toast("err", f"No se pudo guardar el límite: {e}")
+            return redirect(url_for('index'))
+    else:
+        l = str(read_limit(user) or 1)
+
+    # Banner actualizado
+    try:
+        banner = write_banner(user, exp_date, d, l)
+        edit_sshd_config(lambda txt: strip_match(txt, user).rstrip("\n") + f"\n\nMatch User {user}\nBanner {banner}\n")
+    except Exception:
+        pass
+
+    if not changed:
+        toast("info", "No se modificó ningún campo.")
+    else:
+        audit(f"EDIT_SSH {user} {', '.join(changed)}")
+        toast("ok", f"Usuario '{user}' actualizado: {', '.join(changed)}.")
+        # Guardar texto de cliente en sesión para mostrar/copiar
+        session["share_user"] = user
+        session["share_text"] = build_client_text(
+            user, session.get("share_pass", ""), f"{d} Días", l, exp_date
+        )
+        session.pop("share_pass", None)
+
+    return redirect(url_for('index'))
+
+@app.route('/api/stats')
+@requires_auth
+def api_stats():
+    return Response(json.dumps(system_stats()), mimetype="application/json",
+                    headers={"Cache-Control": "no-store"})
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1336,7 +1896,52 @@ def logout():
     toast("ok", "Sesión cerrada correctamente.")
     return redirect(url_for('login'))
 
+
+@app.route('/change_password', methods=['POST'])
+@requires_auth
+@csrf_protect
+def change_password():
+    current = request.form.get("current") or ""
+    new = request.form.get("new") or ""
+    confirm = request.form.get("confirm") or ""
+
+    stored_user, stored_secret = get_panel_secret_material()
+    if not _verify_password(current, stored_secret):
+        time.sleep(0.6)
+        audit("CHANGE_PASS_FAIL current_invalid")
+        toast("err", "La contraseña actual no es correcta.")
+        return redirect(url_for("index"))
+
+    if len(new) < 8 or len(new) > 64:
+        toast("err", "La nueva contraseña debe tener entre 8 y 64 caracteres.")
+        return redirect(url_for("index"))
+    if any(ord(c) < 32 or ord(c) == 127 for c in new):
+        toast("err", "La nueva contraseña contiene caracteres no válidos.")
+        return redirect(url_for("index"))
+    if new != confirm:
+        toast("err", "La nueva contraseña y la confirmación no coinciden.")
+        return redirect(url_for("index"))
+    if hmac.compare_digest(new.encode("utf-8"), current.encode("utf-8")):
+        toast("err", "La nueva contraseña debe ser distinta a la actual.")
+        return redirect(url_for("index"))
+
+    try:
+        _save_auth_file(stored_user, new)
+    except Exception as e:
+        toast("err", f"No se pudo guardar la nueva contraseña: {e}")
+        return redirect(url_for("index"))
+
+    audit("CHANGE_PASS_OK")
+    toast("ok", "Contraseña del panel actualizada (guardada con hash).")
+    return redirect(url_for("index"))
+
+
 if __name__ == '__main__':
-    if "PANEL_PASS" not in os.environ or len(PASS) < 8:
-        print("⚠️  ADVERTENCIA: contraseña por defecto o débil. Define PANEL_USER y PANEL_PASS (mín. 8 caracteres).")
+    auth = _load_auth_file()
+    if not auth:
+        if "PANEL_PASS" not in os.environ or len(_DEFAULT_PASS) < 8:
+            print("⚠️  ADVERTENCIA: no hay panel_auth.json y la contraseña por defecto/env es débil.")
+            print("    Entra al panel y usa «Cambiar contraseña» o define PANEL_USER / PANEL_PASS (mín. 8).")
+    else:
+        print(f"✓ Auth hasheada cargada para usuario «{auth[0]}» desde {AUTH_FILE}")
     app.run(host=HOST, port=PORT)
