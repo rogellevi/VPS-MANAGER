@@ -1053,7 +1053,7 @@ while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 if [ "$SYS_LANG" == "en" ]; then
-M_TITLE="          🚀 VPS MANAGER - V5.2 🚀"
+M_TITLE="            🚀 VPS MANAGER - V5.2  🚀"
 M_OS="💻 OS        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Domain    "
@@ -1076,7 +1076,7 @@ M_OPT0="🚪 Exit"
 M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
-M_TITLE="         🚀 VPS MANAGER - V5.2 🚀"
+M_TITLE="           🚀 VPS MANAGER - V5.2 🚀"
 M_OS="💻 SO        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Dominio   "
