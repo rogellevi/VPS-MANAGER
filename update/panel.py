@@ -815,7 +815,7 @@ TOPBAR = f"""
 <header class="topbar"><div class="topbar-in">
   <div class="top-left">%%MENU%%<a class="brand" href="/">
     <span class="brand-ic">{I_SHIELD}</span>
-    <span><div class="brand-t">PANEL MANAGER</div><div class="brand-s">Administración VPS</div></span>
+    <span><div class="brand-t">PANEL MANAGER</div><div class="brand-s">Administración XRAY</div></span>
   </a></div>
   <div class="top-right">%%LOGOUT%%
   <div class="dd">
@@ -837,7 +837,7 @@ TOPBAR = f"""
 FOOTER = f"""
 <footer class="footer"><div class="footer-in">
   <div class="footer-brand">{_svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>', 18)} VPS MANAGER</div>
-  <div class="footer-live">v2.2</div>
+  <div class="footer-live">v2.5</div>
   <div>© %%YEAR%% Todos los derechos reservados</div>
 </div></footer>
 """
@@ -856,7 +856,7 @@ def page(title, body, nav="", minimal=False):
 <header class="topbar topbar-minimal"><div class="topbar-in">
   <a class="brand" href="/">
     <span class="brand-ic">{I_SHIELD}</span>
-    <span><div class="brand-t">MANAGER PANEL</div><div class="brand-s">Administración VPS</div></span>
+    <span><div class="brand-t">MANAGER PANEL</div><div class="brand-s">Administración XRAY</div></span>
   </a>
   <div class="top-right">
     <div class="dd">
@@ -1241,21 +1241,208 @@ def start_v2_worker():
 def _lazy_start_worker():
     start_v2_worker()
 
+# ── Generador de códigos QR (sin dependencias; modo byte, corrección L, versiones 1-40) ──
+_QR_ECC = (-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30)
+_QR_BLK = (-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25)
+
+def _qr_mul(x, y):
+    z = 0
+    for i in range(7, -1, -1):
+        z = (z << 1) ^ ((z >> 7) * 0x11D)
+        z ^= ((y >> i) & 1) * x
+    return z
+
+def _qr_divisor(deg):
+    res = [0] * (deg - 1) + [1]
+    root = 1
+    for _ in range(deg):
+        for j in range(deg):
+            res[j] = _qr_mul(res[j], root)
+            if j + 1 < deg:
+                res[j] ^= res[j + 1]
+        root = _qr_mul(root, 2)
+    return res
+
+def _qr_rem(data, div):
+    res = [0] * len(div)
+    for b in data:
+        f = b ^ res.pop(0)
+        res.append(0)
+        for i, c in enumerate(div):
+            res[i] ^= _qr_mul(c, f)
+    return res
+
+def _qr_raw(ver):
+    r = (16 * ver + 128) * ver + 64
+    if ver >= 2:
+        na = ver // 7 + 2
+        r -= (25 * na - 10) * na - 55
+        if ver >= 7:
+            r -= 36
+    return r
+
+def _qr_matrix(text):
+    """Devuelve la matriz de módulos (lista de listas de bool) para `text`."""
+    raw = text.encode("utf-8")
+    for ver in range(1, 41):
+        cap = _qr_raw(ver) // 8 - _QR_ECC[ver] * _QR_BLK[ver]
+        ccbits = 8 if ver < 10 else 16
+        if 4 + ccbits + 8 * len(raw) <= cap * 8:
+            break
+    else:
+        raise ValueError("Texto demasiado largo para un QR")
+    bits = [0, 1, 0, 0] + [(len(raw) >> i) & 1 for i in range(ccbits - 1, -1, -1)]
+    for b in raw:
+        bits += [(b >> i) & 1 for i in range(7, -1, -1)]
+    bits += [0] * min(4, cap * 8 - len(bits))
+    bits += [0] * (-len(bits) % 8)
+    data = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    pad = 0xEC
+    while len(data) < cap:
+        data.append(pad)
+        pad ^= 0xEC ^ 0x11
+    nb, el, rawcw = _QR_BLK[ver], _QR_ECC[ver], _qr_raw(ver) // 8
+    nshort, slen = nb - rawcw % nb, rawcw // nb
+    div, blocks, k = _qr_divisor(el), [], 0
+    for i in range(nb):
+        dat = data[k:k + slen - el + (0 if i < nshort else 1)]
+        k += len(dat)
+        ecc = _qr_rem(dat, div)
+        if i < nshort:
+            dat = dat + [0]
+        blocks.append(dat + ecc)
+    cw = []
+    for i in range(len(blocks[0])):
+        for j, blk in enumerate(blocks):
+            if i != slen - el or j >= nshort:
+                cw.append(blk[i])
+
+    size = ver * 4 + 17
+    mod = [[False] * size for _ in range(size)]
+    fn = [[False] * size for _ in range(size)]
+    def setf(x, y, d):
+        mod[y][x] = bool(d); fn[y][x] = True
+    for i in range(size):
+        setf(6, i, i % 2 == 0); setf(i, 6, i % 2 == 0)
+    for cx, cy in ((3, 3), (size - 4, 3), (3, size - 4)):
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                x, y = cx + dx, cy + dy
+                if 0 <= x < size and 0 <= y < size:
+                    setf(x, y, max(abs(dx), abs(dy)) not in (2, 4))
+    if ver > 1:
+        na = ver // 7 + 2
+        step = (ver * 8 + na * 3 + 5) // (na * 4 - 4) * 2
+        pos = list(reversed([(ver * 4 + 10) - i * step for i in range(na - 1)] + [6]))
+        for i in range(na):
+            for j in range(na):
+                if (i == 0 and j == 0) or (i == 0 and j == na - 1) or (i == na - 1 and j == 0):
+                    continue
+                for dy in range(-2, 3):
+                    for dx in range(-2, 3):
+                        setf(pos[i] + dx, pos[j] + dy, max(abs(dx), abs(dy)) != 1)
+    def fmt(mask):
+        d = (1 << 3) | mask          # nivel de corrección L = 01
+        r = d
+        for _ in range(10):
+            r = (r << 1) ^ ((r >> 9) * 0x537)
+        b = ((d << 10) | r) ^ 0x5412
+        bit = lambda i: (b >> i) & 1
+        for i in range(6): setf(8, i, bit(i))
+        setf(8, 7, bit(6)); setf(8, 8, bit(7)); setf(7, 8, bit(8))
+        for i in range(9, 15): setf(14 - i, 8, bit(i))
+        for i in range(8): setf(size - 1 - i, 8, bit(i))
+        for i in range(8, 15): setf(8, size - 15 + i, bit(i))
+        setf(8, size - 8, True)
+    fmt(0)
+    if ver >= 7:
+        r = ver
+        for _ in range(12):
+            r = (r << 1) ^ ((r >> 11) * 0x1F25)
+        b = (ver << 12) | r
+        for i in range(18):
+            a, c = size - 11 + i % 3, i // 3
+            setf(a, c, (b >> i) & 1); setf(c, a, (b >> i) & 1)
+    i = 0
+    for right in range(size - 1, 0, -2):
+        if right <= 6:
+            right -= 1
+        for vert in range(size):
+            for j in range(2):
+                x = right - j
+                y = size - 1 - vert if ((right + 1) & 2) == 0 else vert
+                if not fn[y][x] and i < len(cw) * 8:
+                    mod[y][x] = bool((cw[i >> 3] >> (7 - (i & 7))) & 1)
+                    i += 1
+    masks = (lambda x, y: (x + y) % 2 == 0, lambda x, y: y % 2 == 0, lambda x, y: x % 3 == 0,
+             lambda x, y: (x + y) % 3 == 0, lambda x, y: (x // 3 + y // 2) % 2 == 0,
+             lambda x, y: x * y % 2 + x * y % 3 == 0, lambda x, y: (x * y % 2 + x * y % 3) % 2 == 0,
+             lambda x, y: ((x + y) % 2 + x * y % 3) % 2 == 0)
+    def apply(m):
+        f = masks[m]
+        for y in range(size):
+            for x in range(size):
+                if not fn[y][x] and f(x, y):
+                    mod[y][x] = not mod[y][x]
+    _PA = (1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0)
+    _PB = (0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1)
+    def penalty():
+        p = 0
+        for g in (mod, [list(c) for c in zip(*mod)]):
+            for row in g:
+                run = 1
+                for k2 in range(1, size + 1):
+                    if k2 < size and row[k2] == row[k2 - 1]:
+                        run += 1
+                    else:
+                        if run >= 5:
+                            p += 3 + run - 5
+                        run = 1
+                bits_ = [1 if v else 0 for v in row]
+                for k2 in range(size - 10):
+                    w = tuple(bits_[k2:k2 + 11])
+                    if w == _PA or w == _PB:
+                        p += 40
+        for y in range(size - 1):
+            for x in range(size - 1):
+                if mod[y][x] == mod[y][x + 1] == mod[y + 1][x] == mod[y + 1][x + 1]:
+                    p += 3
+        dark = sum(map(sum, mod))
+        tot = size * size
+        p += ((abs(dark * 20 - tot * 10) + tot - 1) // tot - 1) * 10
+        return p
+    best, bestp = 0, None
+    for m in range(8):
+        apply(m); fmt(m)
+        pe = penalty()
+        if bestp is None or pe < bestp:
+            best, bestp = m, pe
+        apply(m)
+    apply(best); fmt(best)
+    return mod
+
+def _qr_svg(text, border=4):
+    m = _qr_matrix(text)
+    n = len(m)
+    d = []
+    for y, row in enumerate(m):
+        x = 0
+        while x < n:
+            if row[x]:
+                s = x
+                while x < n and row[x]:
+                    x += 1
+                d.append(f"M{s + border},{y + border}h{x - s}v1h-{x - s}z")
+            else:
+                x += 1
+    t = n + 2 * border
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {t} {t}" style="width:100%;max-width:320px;height:auto;display:block;margin:0 auto" '
+            f'shape-rendering="crispEdges"><rect width="{t}" height="{t}" fill="#fff"/><path d="{"".join(d)}" fill="#000"/></svg>')
+
 def qr_svg(text):
-    """QR como SVG inline (la CSP solo permite img data:, así que se incrusta en la página)."""
+    """QR como SVG inline (la CSP solo permite img data:, así que se incrusta en la página). Sin dependencias."""
     try:
-        import segno
-        return segno.make(text, error="l", micro=False).svg_inline(scale=4, border=2, dark="#000", light="#fff")
-    except ImportError:
-        pass
-    except Exception:
-        return None
-    try:
-        import qrcode, qrcode.image.svg
-        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
-        qr.add_data(text); qr.make(fit=True)
-        svg = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).to_string(encoding="unicode")
-        return svg[svg.find("<svg"):]
+        return _qr_svg(text)
     except Exception:
         return None
 
@@ -2123,7 +2310,7 @@ def v2ray_qr(vid):
             continue
         svg = qr_svg(lk)
         qr_html = (f'<div style="background:#fff;padding:10px;border-radius:12px;display:inline-block;max-width:100%">{svg}</div>'
-                   if svg else '<div class="empty">Falta la librería QR en el servidor: <span class="mono">pip install segno</span></div>')
+                   if svg else '<div class="empty">No se pudo generar el QR (enlace demasiado largo). Usa el botón de copiar.</div>')
         blocks += (f'<div class="card" style="text-align:center"><h4 class="u-name" style="margin-bottom:10px">{label}</h4>{qr_html}'
                    f'<div class="actions two" style="margin-top:12px"><button type="button" class="btn btn-primary" '
                    f'data-copy="{escape(lk, quote=True)}">Copiar enlace</button></div></div>')
@@ -2309,7 +2496,7 @@ def login():
             <form class="card login-card" method="POST" action="/login">
                 <div class="brand-ic login-ic">{I_SHIELD}</div>
                 <h2>Iniciar sesión</h2>
-                <p class="muted">Panel de administración VPS</p>
+                <p class="muted">Panel de administración XRAY</p>
                 {alert}
                 <label for="lu">Usuario</label>
                 <input id="lu" name="username" type="text" autocomplete="username" autocapitalize="off" required autofocus>
