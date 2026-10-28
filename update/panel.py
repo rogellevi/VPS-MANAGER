@@ -15,6 +15,10 @@ import hashlib
 import secrets
 import uuid
 import base64
+import fcntl
+import threading
+from contextlib import contextmanager
+from datetime import date
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # los formularios son pequeños
@@ -32,6 +36,12 @@ PORT = int(os.environ.get("PANEL_PORT", "8181"))
 BASE_DIR = "/etc/vps-manager"
 BOT_DIR = os.path.join(BASE_DIR, "telegram_bot")
 V2_FILE = os.path.join(BASE_DIR, "v2ray_users.json")
+V2_LOCK_FILE = os.path.join(BASE_DIR, ".v2ray.lock")
+# Config real de Xray (la misma que usan vmess.sh / vless.sh)
+XRAY_CONFIG = os.environ.get("XRAY_CONFIG", "/usr/local/etc/xray/config.json")
+XRAY_BIN = os.environ.get("XRAY_BIN") or shutil.which("xray") or "/usr/local/bin/xray"
+XRAY_SERVICE = os.environ.get("XRAY_SERVICE", "xray")
+V2_EXPIRY_CHECK_SECS = 60
 AUDIT_FILE = os.path.join(BASE_DIR, "panel_audit.log")
 AUTH_FILE = os.path.join(BASE_DIR, "panel_auth.json")
 SSHD_CONFIG = "/etc/ssh/sshd_config"
@@ -1002,6 +1012,253 @@ def save_v2(items):
         json.dump(items, f, ensure_ascii=False, indent=2)
     os.replace(tmp, V2_FILE)
 
+# ── Integración real con Xray ────────────────────────────────
+class XrayError(Exception):
+    pass
+
+_v2_tl = threading.RLock()
+_v2_depth = 0
+_v2_fd = None
+
+@contextmanager
+def v2_lock():
+    """Bloqueo reentrante (hilos + procesos) para serializar JSON y config.json."""
+    global _v2_depth, _v2_fd
+    with _v2_tl:
+        if _v2_depth == 0:
+            os.makedirs(BASE_DIR, exist_ok=True)
+            _v2_fd = open(V2_LOCK_FILE, "a")
+            fcntl.flock(_v2_fd, fcntl.LOCK_EX)
+        _v2_depth += 1
+        try:
+            yield
+        finally:
+            _v2_depth -= 1
+            if _v2_depth == 0:
+                try:
+                    fcntl.flock(_v2_fd, fcntl.LOCK_UN)
+                finally:
+                    _v2_fd.close()
+                    _v2_fd = None
+
+def _journal_tail():
+    rc, out = run(["journalctl", "-u", XRAY_SERVICE, "-n", "6", "--no-pager", "-o", "cat"], timeout=10)
+    return out.strip()[-500:] if rc == 0 else ""
+
+def _xray_restart_ok():
+    """Reinicia Xray. Devuelve (ok, detalle); si falla, el detalle trae las últimas líneas del log."""
+    run(["systemctl", "reset-failed", XRAY_SERVICE], timeout=10)      # evita 'start-limit-hit' por reinicios seguidos
+    rc, out = run(["systemctl", "restart", XRAY_SERVICE], timeout=30)
+    if rc != 0:
+        return False, (out + " " + _journal_tail()).strip()
+    time.sleep(1.0)
+    rc, out = run(["systemctl", "is-active", XRAY_SERVICE], timeout=10)
+    if rc == 0 and out.strip() == "active":
+        return True, ""
+    return False, (out.strip() + " | " + _journal_tail()).strip(" |")
+
+def _xray_mutate(mutator):
+    try:
+        return _xray_mutate_inner(mutator)
+    except OSError as e:
+        raise XrayError(f"Error de archivo/permisos ({e}). ¿El panel corre como root?")
+
+def _xray_mutate_inner(mutator):
+    """
+    Lee config.json, aplica mutator(cfg) -> bool (¿cambió?), valida con
+    `xray run -test`, escribe de forma atómica, reinicia el servicio y, si algo
+    falla, restaura el respaldo. Devuelve True si hubo cambios.
+    """
+    with v2_lock():
+        try:
+            with open(XRAY_CONFIG, encoding="utf-8") as f:
+                original = f.read()
+            cfg = json.loads(original)
+        except FileNotFoundError:
+            raise XrayError("No existe la config de Xray. Instala el motor desde el menú VMess/VLESS.")
+        except ValueError as e:
+            raise XrayError(f"config.json de Xray no es JSON válido: {e}")
+
+        if not mutator(cfg):
+            return False
+
+        new_text = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+        mode = os.stat(XRAY_CONFIG).st_mode & 0o777
+
+        # 1) Validar una copia con extensión .json en /tmp (Xray exige .json y, si usa
+        #    -confdir, no debe haber .json extra en su carpeta).
+        import tempfile
+        chk_fd, chk = tempfile.mkstemp(prefix="xray_check_", suffix=".json")
+        try:
+            with os.fdopen(chk_fd, "w", encoding="utf-8") as f:
+                f.write(new_text)
+            rc, out = run([XRAY_BIN, "run", "-test", "-config", chk], timeout=20)
+        finally:
+            try: os.remove(chk)
+            except OSError: pass
+        if rc != 0:
+            raise XrayError(f"Xray rechazó la configuración: {out[-300:]}")
+
+        # 2) Escritura atómica del archivo real (temporal en la misma carpeta, sin .json)
+        tmp = XRAY_CONFIG + ".panel.tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        os.fchmod(fd, 0o644)        # el umask del proceso no debe dejar la config ilegible para el usuario de Xray
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(new_text)
+
+        backup = XRAY_CONFIG + ".panel.bak"
+        try:
+            with open(backup, "w", encoding="utf-8") as f:
+                f.write(original)
+            os.chmod(backup, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, XRAY_CONFIG)
+
+        ok, out = _xray_restart_ok()
+        if not ok:
+            with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+                f.write(original)
+            os.chmod(XRAY_CONFIG, 0o644)
+            ok2, _ = _xray_restart_ok()
+            if ok2:
+                raise XrayError(f"Xray no arrancó con el cambio (se restauró la config anterior): {out[-400:]}")
+            raise XrayError("Xray tampoco arranca con la config anterior: el problema es del servidor "
+                            f"(puerto 80/443 ocupado, certificado ilegible o servicio dañado), no de la cuenta. Detalle: {out[-400:]}")
+        return True
+
+def _xray_targets(cfg, proto):
+    """Inbounds donde van los clientes: todos los VMess; los VLESS con transporte WS (no los de fallback)."""
+    out = []
+    for ib in cfg.get("inbounds", []):
+        if not isinstance(ib, dict) or ib.get("protocol") != proto:
+            continue
+        if proto == "vless" and (ib.get("streamSettings") or {}).get("network") != "ws":
+            continue
+        out.append(ib)
+    return out
+
+def xray_add_client(proto, v_uuid, email):
+    """Registra el UUID como cliente de Xray (se busca el inbound por protocolo, no por índice)."""
+    def m(cfg):
+        ibs = _xray_targets(cfg, proto)
+        if not ibs:
+            raise XrayError(f"No hay inbound {proto.upper()} (WS) en config.json. Usa 'Reinstalar / Reparar Motor Xray' en el menú.")
+        changed = False
+        for ib in ibs:
+            clients = ib.setdefault("settings", {}).setdefault("clients", [])
+            if not any(isinstance(c, dict) and c.get("id") == v_uuid for c in clients):
+                c = {"id": v_uuid, "email": email}
+                if proto == "vmess":
+                    c = {"id": v_uuid, "alterId": 0, "email": email}
+                clients.append(c)
+                changed = True
+        return changed
+    return _xray_mutate(m)
+
+def xray_remove_clients(uuids):
+    """Quita uno o varios UUID de cualquier inbound (VMess o VLESS). Idempotente; un solo reinicio."""
+    ids = set(uuids)
+    def m(cfg):
+        changed = False
+        for ib in cfg.get("inbounds", []):
+            if not isinstance(ib, dict):
+                continue
+            st = ib.get("settings")
+            clients = st.get("clients") if isinstance(st, dict) else None
+            if not isinstance(clients, list):
+                continue
+            keep = [c for c in clients if not (isinstance(c, dict) and c.get("id") in ids)]
+            if len(keep) != len(clients):
+                st["clients"] = keep
+                changed = True
+        return changed
+    return _xray_mutate(m)
+
+def v2_proto(it):
+    return "vless" if str(it.get("protocol", "")).lower() == "vless" else "vmess"
+
+def vless_link(alias, dom, v_uuid, tls):
+    q = (f"path=%2Fvless&security=tls&encryption=none&type=ws&host={dom}&sni={dom}" if tls
+         else "path=%2Fvless&security=none&encryption=none&type=ws")
+    return f"vless://{v_uuid}@{dom}:{443 if tls else 80}?{q}#{quote(alias)}"
+
+def vmess_link(alias, dom, v_uuid, tls):
+    data = {"v": "2", "ps": alias, "add": dom, "port": "443" if tls else "80", "id": v_uuid, "aid": "0",
+            "scy": "auto", "net": "ws", "type": "none", "host": dom, "path": "/vmess",
+            "tls": "tls" if tls else "none"}
+    if tls:
+        data["sni"] = dom
+        data["alpn"] = ""
+    raw = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+    return "vmess://" + base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+
+def v2_days_left(it):
+    """Días restantes (None si la cuenta no tiene vencimiento registrado)."""
+    exp = str(it.get("expires", ""))
+    try:
+        return (datetime.strptime(exp, "%Y-%m-%d").date() - date.today()).days
+    except ValueError:
+        return None
+
+def purge_expired_v2():
+    """Quita de Xray las cuentas vencidas y las marca como inactivas. Devuelve cuántas."""
+    with v2_lock():
+        items = load_v2()
+        today = date.today().isoformat()
+        expired = [it for it in items if isinstance(it, dict) and it.get("active", True) and not it.get("blocked")
+                   and UUID_RE.match(str(it.get("uuid", ""))) and it.get("expires") and str(it["expires"]) < today]
+        if not expired:
+            return 0
+        xray_remove_clients([it["uuid"] for it in expired])   # si falla, no se marca nada
+        for it in expired:
+            it["active"] = False
+        save_v2(items)
+        return len(expired)
+
+_v2_worker_started = False
+def _v2_expiry_worker():
+    while True:
+        try:
+            n = purge_expired_v2()
+            if n:
+                try:
+                    with open(AUDIT_FILE, "a") as f:
+                        f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} - EXPIRE_V2RAY {n} cuenta(s) retirada(s) de Xray\n")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        time.sleep(V2_EXPIRY_CHECK_SECS)
+
+def start_v2_worker():
+    global _v2_worker_started
+    if not _v2_worker_started:
+        _v2_worker_started = True
+        threading.Thread(target=_v2_expiry_worker, daemon=True, name="v2-expiry").start()
+
+@app.before_request
+def _lazy_start_worker():
+    start_v2_worker()
+
+def qr_svg(text):
+    """QR como SVG inline (la CSP solo permite img data:, así que se incrusta en la página)."""
+    try:
+        import segno
+        return segno.make(text, error="l", micro=False).svg_inline(scale=4, border=2, dark="#000", light="#fff")
+    except ImportError:
+        pass
+    except Exception:
+        return None
+    try:
+        import qrcode, qrcode.image.svg
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
+        qr.add_data(text); qr.make(fit=True)
+        svg = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).to_string(encoding="unicode")
+        return svg[svg.find("<svg"):]
+    except Exception:
+        return None
+
 def get_domain():
     try:
         with open(os.path.join(BASE_DIR, "dominio")) as f:
@@ -1321,25 +1578,57 @@ def index():
 
     # Cuentas V2Ray / VMess
     v2_cards = ""
+    try:
+        purge_expired_v2()
+    except Exception:
+        pass
     v2_items = [it for it in load_v2() if isinstance(it, dict) and UUID_RE.match(str(it.get("uuid", "")))]
     for it in reversed(v2_items):
         nm = escape(str(it.get("name", "")))
         uid = str(it["uuid"])
         link = escape(str(it.get("link", "")), quote=True)
         created = escape(str(it.get("created", "")))
-        v2_del = post_btn(f"/v2ray/delete/{uid}", "Eliminar", "btn-ghost", "¿Eliminar esta cuenta V2Ray del panel?")
+        left = v2_days_left(it)
+        proto_lbl = "VLESS" if v2_proto(it) == "vless" else "VMess"
+        if it.get("blocked"):
+            tag_cls, tag_txt = "c-warn", "BLOQUEADA"
+            exp_txt = escape(str(it.get("expires") or "—"))
+        elif not it.get("expires"):
+            tag_cls, tag_txt = "c-warn", "SIN XRAY"
+            exp_txt = "Sin vencimiento · no registrada en Xray"
+        elif not it.get("active", True) or (left is not None and left < 0):
+            tag_cls, tag_txt = "c-danger", "VENCIDA"
+            exp_txt = f"{escape(str(it['expires']))} (vencida)"
+        else:
+            tag_cls, tag_txt = "c-ok", "ACTIVA"
+            exp_txt = f"{escape(str(it['expires']))} ({left} d)" if left is not None else escape(str(it["expires"]))
+        can_block = bool(it.get("blocked")) or tag_txt == "ACTIVA"
+        v2_blk = post_btn(f"/v2ray/block/{uid}", "Desbloquear" if it.get("blocked") else "Bloquear", "btn-ghost",
+                          None if it.get("blocked") else "¿Bloquear esta cuenta? Dejará de conectar hasta que la desbloquees.") if can_block else ""
+        v2_del = post_btn(f"/v2ray/delete/{uid}", "Eliminar", "btn-ghost",
+                          "¿Eliminar esta cuenta? También se quitará del servidor Xray y dejará de conectar.")
         v2_cards += f"""
         <div class="card" data-name="{nm.lower()}">
             <div class="u-head">
                 <div class="avatar">V</div>
-                <div><h4 class="u-name">{nm}</h4><div class="u-sub">VMess · WS + TLS</div></div>
-                <span class="tag c-accent">V2RAY</span>
+                <div><h4 class="u-name">{nm}</h4><div class="u-sub">{proto_lbl} · WS 443 TLS / 80</div></div>
+                <span class="tag {tag_cls}">{tag_txt}</span>
             </div>
             <div class="row"><span>UUID</span><span class="mono">{uid[:8]}…{uid[-4:]}</span></div>
             <div class="row"><span>Creada</span><strong>{created}</strong></div>
-            <div class="actions two">
-                <button type="button" class="btn btn-primary" data-copy="{link}">Copiar enlace</button>
+            <div class="row"><span>Vence</span><strong>{exp_txt}</strong></div>
+            <div class="actions">
+                <button type="button" class="btn btn-primary" data-copy="{link}">Enlace</button>
+                <a class="btn btn-ghost" href="/v2ray/qr/{uid}">QR</a>
                 {v2_del}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:stretch">
+                <form method="POST" action="/v2ray/renew/{uid}" style="flex:1;display:flex;gap:6px;margin:0">
+                    {csrf_input()}
+                    <input type="number" name="days" placeholder="días" min="1" max="3650" required aria-label="Días a sumar" style="min-width:0;flex:1">
+                    <button type="submit" class="btn btn-success">Renovar</button>
+                </form>
+                {v2_blk}
             </div>
         </div>
         """
@@ -1506,12 +1795,14 @@ def index():
         <div class="modal" id="modalV2" role="dialog" aria-modal="true" aria-labelledby="tV2">
             <form class="modal-box" action="/create_v2ray" method="POST" autocomplete="off">
                 {csrf_input()}
-                <div class="modal-head"><h3 id="tV2">Crear V2Ray (VMess)</h3><button type="button" class="modal-x" data-close aria-label="Cerrar">×</button></div>
+                <div class="modal-head"><h3 id="tV2">Crear cuenta V2Ray</h3><button type="button" class="modal-x" data-close aria-label="Cerrar">×</button></div>
                 <div class="fields">
-                    <div class="full"><label for="u2">Nombre descriptivo</label><input id="u2" type="text" name="user" placeholder="ej: carlos" maxlength="40" required></div>
+                    <div><label for="u2">Nombre descriptivo</label><input id="u2" type="text" name="user" placeholder="ej: carlos" maxlength="40" required></div>
+                    <div><label for="d2">Días de duración</label><input id="d2" type="number" name="days" placeholder="30" min="1" max="3650" value="30" required></div>
+                    <div class="full"><label for="p2">Protocolo</label><select id="p2" name="proto" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)"><option value="vmess">VMess</option><option value="vless">VLESS</option></select></div>
                     <div class="full modal-foot">
                         <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
-                        <button type="submit" class="btn btn-primary">Generar enlace VMess</button>
+                        <button type="submit" class="btn btn-primary">Crear cuenta</button>
                     </div>
                 </div>
             </form>
@@ -1661,42 +1952,188 @@ def create_v2ray():
     if not NAME_RE.match(name):
         toast("err", "Nombre inválido: usa hasta 40 caracteres (letras, números, espacio, . _ -).")
         return redirect(url_for('index'))
+    try:
+        days = int((request.form.get('days') or "30").strip())
+    except ValueError:
+        days = 0
+    if not (1 <= days <= 3650):
+        toast("err", "Los días deben estar entre 1 y 3650.")
+        return redirect(url_for('index'))
 
+    proto = "vless" if (request.form.get('proto') or "vmess").lower() == "vless" else "vmess"
     dom = get_domain()
     if not dom:
         toast("err", "No se pudo obtener el dominio o la IP del servidor.")
         return redirect(url_for('index'))
 
     v_uuid = str(uuid.uuid4())
-    vmess = {"v": "2", "ps": name, "add": dom, "port": "443", "id": v_uuid, "aid": "0", "scy": "auto",
-             "net": "ws", "type": "none", "host": dom, "path": "/vmess", "tls": "tls", "sni": dom, "alpn": ""}
-    raw = json.dumps(vmess, separators=(",", ":"), ensure_ascii=False)
-    vmess_link = "vmess://" + base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+    expires = (date.today() + timedelta(days=days)).isoformat()
+    # El email de Xray es solo una etiqueta; la identidad real es el UUID.
+    email = name.replace(" ", "_")
 
-    items = load_v2()
-    items.append({"name": name, "uuid": v_uuid, "link": vmess_link,
-                  "created": datetime.now().strftime("%Y-%m-%d %H:%M")})
-    try:
-        save_v2(items)
-    except Exception as e:
-        toast("err", f"No se pudo guardar la cuenta V2Ray: {e}")
-        return redirect(url_for('index'))
-    audit(f"CREATE_V2RAY {name} {v_uuid}")
-    toast("ok", f"Cuenta V2Ray '{name}' creada con éxito.")
+    with v2_lock():
+        items = load_v2()
+        if any(isinstance(it, dict) and v2_proto(it) == proto and str(it.get("name", "")).lower() == name.lower() for it in items):
+            toast("err", f"Ya existe una cuenta {proto.upper()} llamada '{name}'.")
+            return redirect(url_for('index'))
+        try:
+            xray_add_client(proto, v_uuid, email)   # 1) registrar en Xray (valida y reinicia)
+        except XrayError as e:
+            audit(f"CREATE_V2RAY_FAIL {name} {e}")
+            toast("err", f"No se pudo registrar la cuenta en Xray: {e}")
+            return redirect(url_for('index'))
+        mk = vless_link if proto == "vless" else vmess_link
+        items.append({"name": name, "uuid": v_uuid, "protocol": proto,
+                      "link": mk(f"{name}-TLS", dom, v_uuid, True),
+                      "link_ntls": mk(f"{name}-NTLS", dom, v_uuid, False),
+                      "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                      "days": days, "expires": expires, "active": True})
+        try:
+            save_v2(items)                          # 2) guardar en el panel
+        except Exception as e:
+            try:
+                xray_remove_clients([v_uuid])      # no dejar un UUID huérfano en Xray
+            except XrayError:
+                pass
+            toast("err", f"No se pudo guardar la cuenta V2Ray: {e}")
+            return redirect(url_for('index'))
+    audit(f"CREATE_V2RAY {proto} {name} {v_uuid} dias={days} expira={expires}")
+    toast("ok", f"Cuenta {proto.upper()} '{name}' creada y activa en Xray hasta {expires}.")
     return redirect(url_for('index'))
 
 @app.route('/v2ray/delete/<vid>', methods=['POST'])
 @requires_auth
 @csrf_protect
 def v2ray_delete(vid):
-    if UUID_RE.match(vid):
+    if not UUID_RE.match(vid):
+        toast("err", "UUID inválido.")
+        return redirect(url_for('index'))
+    with v2_lock():
+        try:
+            xray_remove_clients([vid])              # primero Xray: si falla, la cuenta se conserva
+        except XrayError as e:
+            audit(f"DELETE_V2RAY_FAIL {vid} {e}")
+            toast("err", f"No se pudo quitar la cuenta de Xray (no se borró): {e}")
+            return redirect(url_for('index'))
         items = [it for it in load_v2() if isinstance(it, dict) and it.get("uuid") != vid]
         save_v2(items)
-        audit(f"DELETE_V2RAY {vid}")
-        toast("ok", "Cuenta V2Ray eliminada.")
-    else:
-        toast("err", "UUID inválido.")
+    audit(f"DELETE_V2RAY {vid}")
+    toast("ok", "Cuenta V2Ray eliminada del panel y de Xray.")
     return redirect(url_for('index'))
+
+@app.route('/v2ray/renew/<vid>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def v2ray_renew(vid):
+    if not UUID_RE.match(vid):
+        toast("err", "UUID inválido.")
+        return redirect(url_for('index'))
+    try:
+        days = int((request.form.get('days') or "").strip())
+    except ValueError:
+        days = 0
+    if not (1 <= days <= 3650):
+        toast("err", "Los días deben estar entre 1 y 3650.")
+        return redirect(url_for('index'))
+    with v2_lock():
+        items = load_v2()
+        it = next((x for x in items if isinstance(x, dict) and x.get("uuid") == vid), None)
+        if not it:
+            toast("err", "Cuenta V2Ray no encontrada.")
+            return redirect(url_for('index'))
+        base = date.today()
+        try:
+            cur = datetime.strptime(str(it.get("expires", "")), "%Y-%m-%d").date()
+            if cur > base:
+                base = cur          # se suma sobre el vencimiento vigente, no sobre hoy
+        except ValueError:
+            pass
+        new_exp = (base + timedelta(days=days)).isoformat()
+        blocked = bool(it.get("blocked"))
+        if not blocked:
+            try:
+                xray_add_client(v2_proto(it), vid, str(it.get("name", "")).replace(" ", "_"))   # reactiva si había vencido
+            except XrayError as e:
+                audit(f"RENEW_V2RAY_FAIL {vid} {e}")
+                toast("err", f"No se pudo reactivar la cuenta en Xray: {e}")
+                return redirect(url_for('index'))
+            it["active"] = True
+        it["expires"] = new_exp
+        try:
+            save_v2(items)
+        except Exception as e:
+            toast("err", f"No se pudo guardar la renovación: {e}")
+            return redirect(url_for('index'))
+    audit(f"RENEW_V2RAY {vid} +{days}d -> {new_exp}")
+    if blocked:
+        toast("warn", f"Vencimiento actualizado a {new_exp}, pero la cuenta sigue BLOQUEADA: desbloquéala para que conecte.")
+    else:
+        toast("ok", f"Cuenta renovada hasta {new_exp}.")
+    return redirect(url_for('index'))
+
+@app.route('/v2ray/block/<vid>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def v2ray_block(vid):
+    if not UUID_RE.match(vid):
+        toast("err", "UUID inválido.")
+        return redirect(url_for('index'))
+    with v2_lock():
+        items = load_v2()
+        it = next((x for x in items if isinstance(x, dict) and x.get("uuid") == vid), None)
+        if not it:
+            toast("err", "Cuenta V2Ray no encontrada.")
+            return redirect(url_for('index'))
+        if not it.get("expires"):
+            toast("err", "Cuenta antigua que nunca estuvo en Xray: elimínala y créala de nuevo.")
+            return redirect(url_for('index'))
+        try:
+            if not it.get("blocked"):
+                xray_remove_clients([vid])
+                it["blocked"], it["active"] = True, False
+                msg = ("ok", "Cuenta bloqueada: ya no puede conectar.")
+            else:
+                left = v2_days_left(it)
+                if left is not None and left < 0:
+                    it["blocked"], it["active"] = False, False
+                    msg = ("warn", "Cuenta desbloqueada pero VENCIDA: renuévala para activarla.")
+                else:
+                    xray_add_client(v2_proto(it), vid, str(it.get("name", "")).replace(" ", "_"))
+                    it["blocked"], it["active"] = False, True
+                    msg = ("ok", "Cuenta desbloqueada y activa en Xray.")
+        except XrayError as e:
+            audit(f"BLOCK_V2RAY_FAIL {vid} {e}")
+            toast("err", f"No se pudo cambiar el estado en Xray (sin cambios): {e}")
+            return redirect(url_for('index'))
+        save_v2(items)
+    audit(f"BLOCK_TOGGLE_V2RAY {vid} blocked={it['blocked']}")
+    toast(*msg)
+    return redirect(url_for('index'))
+
+@app.route('/v2ray/qr/<vid>')
+@requires_auth
+def v2ray_qr(vid):
+    it = next((x for x in load_v2() if isinstance(x, dict) and x.get("uuid") == vid), None) if UUID_RE.match(vid) else None
+    if not it:
+        return error_page("Cuenta V2Ray no encontrada.")
+    blocks = ""
+    for label, key in (("TLS · puerto 443", "link"), ("NTLS · puerto 80", "link_ntls")):
+        lk = str(it.get(key, ""))
+        if not lk:
+            continue
+        svg = qr_svg(lk)
+        qr_html = (f'<div style="background:#fff;padding:10px;border-radius:12px;display:inline-block;max-width:100%">{svg}</div>'
+                   if svg else '<div class="empty">Falta la librería QR en el servidor: <span class="mono">pip install segno</span></div>')
+        blocks += (f'<div class="card" style="text-align:center"><h4 class="u-name" style="margin-bottom:10px">{label}</h4>{qr_html}'
+                   f'<div class="actions two" style="margin-top:12px"><button type="button" class="btn btn-primary" '
+                   f'data-copy="{escape(lk, quote=True)}">Copiar enlace</button></div></div>')
+    exp = escape(str(it.get("expires") or "sin vencimiento"))
+    body = (f'<div style="max-width:520px;margin:0 auto;display:grid;gap:14px">'
+            f'<div class="card"><h3 class="u-name">{escape(str(it.get("name", "")))} · {v2_proto(it).upper()}</h3>'
+            f'<div class="row"><span>UUID</span><span class="mono">{escape(vid)}</span></div>'
+            f'<div class="row"><span>Vence</span><strong>{exp}</strong></div></div>'
+            f'{blocks}<a href="/" class="btn btn-ghost">Volver al panel</a></div>')
+    return Response(page("QR V2Ray", body))
 
 @app.route('/action/<cmd>/<user>', methods=['POST'])
 @requires_auth
@@ -1944,4 +2381,5 @@ if __name__ == '__main__':
             print("    Entra al panel y usa «Cambiar contraseña» o define PANEL_USER / PANEL_PASS (mín. 8).")
     else:
         print(f"✓ Auth hasheada cargada para usuario «{auth[0]}» desde {AUTH_FILE}")
+    start_v2_worker()
     app.run(host=HOST, port=PORT)
