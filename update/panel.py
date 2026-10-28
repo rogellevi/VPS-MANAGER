@@ -2035,4 +2035,351 @@ def v2ray_renew(vid):
     if not (1 <= days <= 3650):
         toast("err", "Los días deben estar entre 1 y 3650.")
         return redirect(url_for('index'))
- 
+    with v2_lock():
+        items = load_v2()
+        it = next((x for x in items if isinstance(x, dict) and x.get("uuid") == vid), None)
+        if not it:
+            toast("err", "Cuenta V2Ray no encontrada.")
+            return redirect(url_for('index'))
+        base = date.today()
+        try:
+            cur = datetime.strptime(str(it.get("expires", "")), "%Y-%m-%d").date()
+            if cur > base:
+                base = cur          # se suma sobre el vencimiento vigente, no sobre hoy
+        except ValueError:
+            pass
+        new_exp = (base + timedelta(days=days)).isoformat()
+        blocked = bool(it.get("blocked"))
+        if not blocked:
+            try:
+                xray_add_client(v2_proto(it), vid, str(it.get("name", "")).replace(" ", "_"))   # reactiva si había vencido
+            except XrayError as e:
+                audit(f"RENEW_V2RAY_FAIL {vid} {e}")
+                toast("err", f"No se pudo reactivar la cuenta en Xray: {e}")
+                return redirect(url_for('index'))
+            it["active"] = True
+        it["expires"] = new_exp
+        try:
+            save_v2(items)
+        except Exception as e:
+            toast("err", f"No se pudo guardar la renovación: {e}")
+            return redirect(url_for('index'))
+    audit(f"RENEW_V2RAY {vid} +{days}d -> {new_exp}")
+    if blocked:
+        toast("warn", f"Vencimiento actualizado a {new_exp}, pero la cuenta sigue BLOQUEADA: desbloquéala para que conecte.")
+    else:
+        toast("ok", f"Cuenta renovada hasta {new_exp}.")
+    return redirect(url_for('index'))
+
+@app.route('/v2ray/block/<vid>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def v2ray_block(vid):
+    if not UUID_RE.match(vid):
+        toast("err", "UUID inválido.")
+        return redirect(url_for('index'))
+    with v2_lock():
+        items = load_v2()
+        it = next((x for x in items if isinstance(x, dict) and x.get("uuid") == vid), None)
+        if not it:
+            toast("err", "Cuenta V2Ray no encontrada.")
+            return redirect(url_for('index'))
+        if not it.get("expires"):
+            toast("err", "Cuenta antigua que nunca estuvo en Xray: elimínala y créala de nuevo.")
+            return redirect(url_for('index'))
+        try:
+            if not it.get("blocked"):
+                xray_remove_clients([vid])
+                it["blocked"], it["active"] = True, False
+                msg = ("ok", "Cuenta bloqueada: ya no puede conectar.")
+            else:
+                left = v2_days_left(it)
+                if left is not None and left < 0:
+                    it["blocked"], it["active"] = False, False
+                    msg = ("warn", "Cuenta desbloqueada pero VENCIDA: renuévala para activarla.")
+                else:
+                    xray_add_client(v2_proto(it), vid, str(it.get("name", "")).replace(" ", "_"))
+                    it["blocked"], it["active"] = False, True
+                    msg = ("ok", "Cuenta desbloqueada y activa en Xray.")
+        except XrayError as e:
+            audit(f"BLOCK_V2RAY_FAIL {vid} {e}")
+            toast("err", f"No se pudo cambiar el estado en Xray (sin cambios): {e}")
+            return redirect(url_for('index'))
+        save_v2(items)
+    audit(f"BLOCK_TOGGLE_V2RAY {vid} blocked={it['blocked']}")
+    toast(*msg)
+    return redirect(url_for('index'))
+
+@app.route('/v2ray/qr/<vid>')
+@requires_auth
+def v2ray_qr(vid):
+    it = next((x for x in load_v2() if isinstance(x, dict) and x.get("uuid") == vid), None) if UUID_RE.match(vid) else None
+    if not it:
+        return error_page("Cuenta V2Ray no encontrada.")
+    blocks = ""
+    for label, key in (("TLS · puerto 443", "link"), ("NTLS · puerto 80", "link_ntls")):
+        lk = str(it.get(key, ""))
+        if not lk:
+            continue
+        svg = qr_svg(lk)
+        qr_html = (f'<div style="background:#fff;padding:10px;border-radius:12px;display:inline-block;max-width:100%">{svg}</div>'
+                   if svg else '<div class="empty">Falta la librería QR en el servidor: <span class="mono">pip install segno</span></div>')
+        blocks += (f'<div class="card" style="text-align:center"><h4 class="u-name" style="margin-bottom:10px">{label}</h4>{qr_html}'
+                   f'<div class="actions two" style="margin-top:12px"><button type="button" class="btn btn-primary" '
+                   f'data-copy="{escape(lk, quote=True)}">Copiar enlace</button></div></div>')
+    exp = escape(str(it.get("expires") or "sin vencimiento"))
+    body = (f'<div style="max-width:520px;margin:0 auto;display:grid;gap:14px">'
+            f'<div class="card"><h3 class="u-name">{escape(str(it.get("name", "")))} · {v2_proto(it).upper()}</h3>'
+            f'<div class="row"><span>UUID</span><span class="mono">{escape(vid)}</span></div>'
+            f'<div class="row"><span>Vence</span><strong>{exp}</strong></div></div>'
+            f'{blocks}<a href="/" class="btn btn-ghost">Volver al panel</a></div>')
+    return Response(page("QR V2Ray", body))
+
+@app.route('/action/<cmd>/<user>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def action(cmd, user):
+    # Solo cuentas normales: jamás root ni usuarios del sistema
+    if cmd not in ("lock", "unlock", "delete", "renew") or user not in managed_users():
+        toast("err", "Acción no permitida o usuario inexistente.")
+        return redirect(url_for('index'))
+
+    if cmd == "lock":
+        run(["usermod", "-L", user]); run(["pkill", "-u", user])
+        toast("warn", f"Usuario '{user}' bloqueado.")
+    elif cmd == "unlock":
+        run(["usermod", "-U", user])
+        toast("ok", f"Usuario '{user}' desbloqueado.")
+    elif cmd == "delete":
+        run(["userdel", "-f", user])
+        for fn in (f"banner_{user}.net", f"limite_{user}"):
+            try:
+                os.remove(os.path.join(BASE_DIR, fn))
+            except OSError:
+                pass
+        edit_sshd_config(lambda txt: strip_match(txt, user))
+        toast("ok", f"Usuario '{user}' eliminado.")
+    elif cmd == "renew":
+        # Suma 30 días al tiempo restante (no reinicia desde hoy)
+        today = int(time.time() // 86400)
+        shadow = shadow_info()
+        _, exp_field = shadow.get(user, ("", ""))
+        if exp_field.strip().lstrip("-").isdigit():
+            current_exp = int(exp_field)
+            base = max(current_exp, today)  # si ya expiró, parte de hoy
+            new_days_epoch = base + 30
+        else:
+            new_days_epoch = today + 30
+        new_exp = (datetime.fromtimestamp(0) + timedelta(days=new_days_epoch)).strftime("%Y-%m-%d")
+        run(["chage", "-E", new_exp, user])
+        # Actualizar banner si existe
+        try:
+            limit = read_limit(user)
+            dias_left = new_days_epoch - today
+            banner = write_banner(user, new_exp, str(dias_left), limit)
+            edit_sshd_config(lambda txt: strip_match(txt, user).rstrip("\n") + f"\n\nMatch User {user}\nBanner {banner}\n")
+        except Exception:
+            pass
+        toast("ok", f"Usuario '{user}' renovado: +30 días (vence {new_exp}).")
+
+    audit(f"{cmd.upper()} {user}")
+    return redirect(url_for('index'))
+
+
+@app.route('/edit_ssh/<user>', methods=['POST'])
+@requires_auth
+@csrf_protect
+def edit_ssh(user):
+    if user not in managed_users():
+        toast("err", "Usuario inexistente o no gestionable.")
+        return redirect(url_for('index'))
+
+    p = (request.form.get("pass") or "").strip()
+    d = (request.form.get("days") or "").strip()
+    l = (request.form.get("limit") or "").strip()
+    changed = []
+
+    # Contraseña (opcional)
+    if p:
+        if not (4 <= len(p) <= 64) or any(ord(c) < 32 or ord(c) == 127 for c in p):
+            toast("err", "La contraseña debe tener entre 4 y 64 caracteres, sin saltos de línea.")
+            return redirect(url_for('index'))
+        code, out = run(["chpasswd"], stdin=f"{user}:{p}\n")
+        if code != 0:
+            toast("err", f"No se pudo cambiar la contraseña: {out}")
+            return redirect(url_for('index'))
+        changed.append("contraseña")
+        session["share_pass"] = p  # solo para el texto de datos de esta sesión
+
+    # Días exactos restantes (desde hoy)
+    if d:
+        if not (d.isdigit() and 1 <= int(d) <= 3650):
+            toast("err", "Los días deben ser un número entre 1 y 3650.")
+            return redirect(url_for('index'))
+        exp_date = (datetime.now() + timedelta(days=int(d))).strftime("%Y-%m-%d")
+        code, out = run(["chage", "-E", exp_date, user])
+        if code != 0:
+            toast("err", f"No se pudo cambiar la expiración: {out}")
+            return redirect(url_for('index'))
+        changed.append(f"vencimiento ({d} días → {exp_date})")
+    else:
+        # conservar fecha actual para el banner
+        today = int(time.time() // 86400)
+        _, _, _, dias_int, exp_date = user_exp_info(user, shadow_info(), today)
+        d = str(max(1, dias_int) if dias_int is not None else 30)
+        if exp_date == "Ilimitado":
+            exp_date = (datetime.now() + timedelta(days=int(d))).strftime("%Y-%m-%d")
+
+    # Límite de conexiones
+    if l:
+        if not (l.isdigit() and 1 <= int(l) <= 1000):
+            toast("err", "El límite de conexiones debe ser un número entre 1 y 1000.")
+            return redirect(url_for('index'))
+        try:
+            with open(os.path.join(BASE_DIR, f"limite_{user}"), "w") as f:
+                f.write(l + "\n")
+            changed.append(f"límite={l}")
+        except Exception as e:
+            toast("err", f"No se pudo guardar el límite: {e}")
+            return redirect(url_for('index'))
+    else:
+        l = str(read_limit(user) or 1)
+
+    # Banner actualizado
+    try:
+        banner = write_banner(user, exp_date, d, l)
+        edit_sshd_config(lambda txt: strip_match(txt, user).rstrip("\n") + f"\n\nMatch User {user}\nBanner {banner}\n")
+    except Exception:
+        pass
+
+    if not changed:
+        toast("info", "No se modificó ningún campo.")
+    else:
+        audit(f"EDIT_SSH {user} {', '.join(changed)}")
+        toast("ok", f"Usuario '{user}' actualizado: {', '.join(changed)}.")
+        # Guardar texto de cliente en sesión para mostrar/copiar
+        session["share_user"] = user
+        session["share_text"] = build_client_text(
+            user, session.get("share_pass", ""), f"{d} Días", l, exp_date
+        )
+        session.pop("share_pass", None)
+
+    return redirect(url_for('index'))
+
+@app.route('/api/stats')
+@requires_auth
+def api_stats():
+    return Response(json.dumps(system_stats()), mimetype="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get("auth"):
+        return redirect(url_for('index'))
+    ip = request.remote_addr or "?"
+    msg, kind = "", "err"
+    if request.method == "POST":
+        if is_locked_out(ip):
+            return too_many()
+        u = (request.form.get("username") or "").strip()
+        p = request.form.get("password") or ""
+        if check_auth(u, p):
+            FAILS.pop(ip, None)
+            session.clear()
+            session.permanent = True
+            session["auth"] = True
+            session["t"] = time.time()
+            session["csrf"] = secrets.token_hex(16)
+            audit("LOGIN_OK")
+            toast("ok", "Bienvenido al panel.")
+            return redirect(url_for('index'))
+        register_fail(ip)
+        audit(f"LOGIN_FALLIDO usuario={u[:32]!r}")
+        time.sleep(0.6)
+        msg = "Usuario o contraseña incorrectos."
+    elif request.args.get("expired"):
+        msg = "Tu sesión expiró. Inicia sesión de nuevo."
+    elif request.args.get("bye"):
+        msg, kind = "Sesión cerrada correctamente.", "ok"
+
+    alert = f'<div class="alert alert-{kind}" role="alert">{escape(msg)}</div>' if msg else ""
+    body = f"""
+        <div class="login-wrap">
+            <form class="card login-card" method="POST" action="/login">
+                <div class="brand-ic login-ic">{I_SHIELD}</div>
+                <h2>Iniciar sesión</h2>
+                <p class="muted">Panel de administración VPS</p>
+                {alert}
+                <label for="lu">Usuario</label>
+                <input id="lu" name="username" type="text" autocomplete="username" autocapitalize="off" required autofocus>
+                <label for="lp">Contraseña</label>
+                <div class="pw">
+                    <input id="lp" name="password" type="password" autocomplete="current-password" required>
+                    <button type="button" class="pw-toggle" data-toggle-pw>Mostrar</button>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px">Entrar</button>
+            </form>
+        </div>
+    """
+    return page("Iniciar sesión", body, minimal=True)
+
+@app.route('/logout', methods=['POST'])
+@requires_auth
+@csrf_protect
+def logout():
+    audit("LOGOUT")
+    session.clear()
+    toast("ok", "Sesión cerrada correctamente.")
+    return redirect(url_for('login'))
+
+
+@app.route('/change_password', methods=['POST'])
+@requires_auth
+@csrf_protect
+def change_password():
+    current = request.form.get("current") or ""
+    new = request.form.get("new") or ""
+    confirm = request.form.get("confirm") or ""
+
+    stored_user, stored_secret = get_panel_secret_material()
+    if not _verify_password(current, stored_secret):
+        time.sleep(0.6)
+        audit("CHANGE_PASS_FAIL current_invalid")
+        toast("err", "La contraseña actual no es correcta.")
+        return redirect(url_for("index"))
+
+    if len(new) < 8 or len(new) > 64:
+        toast("err", "La nueva contraseña debe tener entre 8 y 64 caracteres.")
+        return redirect(url_for("index"))
+    if any(ord(c) < 32 or ord(c) == 127 for c in new):
+        toast("err", "La nueva contraseña contiene caracteres no válidos.")
+        return redirect(url_for("index"))
+    if new != confirm:
+        toast("err", "La nueva contraseña y la confirmación no coinciden.")
+        return redirect(url_for("index"))
+    if hmac.compare_digest(new.encode("utf-8"), current.encode("utf-8")):
+        toast("err", "La nueva contraseña debe ser distinta a la actual.")
+        return redirect(url_for("index"))
+
+    try:
+        _save_auth_file(stored_user, new)
+    except Exception as e:
+        toast("err", f"No se pudo guardar la nueva contraseña: {e}")
+        return redirect(url_for("index"))
+
+    audit("CHANGE_PASS_OK")
+    toast("ok", "Contraseña del panel actualizada (guardada con hash).")
+    return redirect(url_for("index"))
+
+
+if __name__ == '__main__':
+    auth = _load_auth_file()
+    if not auth:
+        if "PANEL_PASS" not in os.environ or len(_DEFAULT_PASS) < 8:
+            print("⚠️  ADVERTENCIA: no hay panel_auth.json y la contraseña por defecto/env es débil.")
+            print("    Entra al panel y usa «Cambiar contraseña» o define PANEL_USER / PANEL_PASS (mín. 8).")
+    else:
+        print(f"✓ Auth hasheada cargada para usuario «{auth[0]}» desde {AUTH_FILE}")
+    start_v2_worker()
+    app.run(host=HOST, port=PORT)
