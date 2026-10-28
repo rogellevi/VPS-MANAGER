@@ -243,14 +243,14 @@ SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 local onlineapp_running=0
 systemctl is-active --quiet onlineapp.service 2>/dev/null && onlineapp_running=1
 [ "$onlineapp_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -c onlineapp)" -gt 0 ] && onlineapp_running=1
-local onlineapp_indicator="🔴"
-[ "$onlineapp_running" -gt 0 ] && onlineapp_indicator="🟢"
+local onlineapp_indicator=" 🔴 "
+[ "$onlineapp_running" -gt 0 ] && onlineapp_indicator=" 🟢 "
 local checkuser_running=0
 systemctl is-active --quiet checkuser.service 2>/dev/null && checkuser_running=1
 systemctl is-active --quiet checkuser-4g.service 2>/dev/null && checkuser_running=1
 [ "$checkuser_running" -eq 0 ] && [ "$(screen -ls 2>/dev/null | grep -cE '\.(checkuser|4gcheck)')" -gt 0 ] && checkuser_running=1
-local checkuser_indicator="🔴"
-[ "$checkuser_running" -gt 0 ] && checkuser_indicator="🟢"
+local checkuser_indicator=" 🔴 "
+[ "$checkuser_running" -gt 0 ] && checkuser_indicator=" 🟢 "
 if [ "$SYS_LANG" == "en" ]; then
 H_TITLE="🔧 TOOLS & SYSTEM"
 H_OPT1="🤝 Reseller Management (Credits)"
@@ -1053,7 +1053,7 @@ while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 if [ "$SYS_LANG" == "en" ]; then
-M_TITLE="🌟 VPS MANAGER PREMIUM - V5.0 LTS PANEL 🌟"
+M_TITLE="🌟 VPS MANAGER - V5.2 🌟"
 M_OS="💻 OS        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Domain    "
@@ -1076,7 +1076,7 @@ M_OPT0="🚪 Exit"
 M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
-M_TITLE="🌟 VPS MANAGER PREMIUM - PANEL V5.0 LTS 🌟"
+M_TITLE="🌟 VPS MANAGER - PANEL V5.2 🌟"
 M_OS="💻 SO        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Dominio   "
