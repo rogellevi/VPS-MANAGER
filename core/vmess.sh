@@ -148,6 +148,7 @@ EOF
     ufw allow 443/tcp >/dev/null 2>&1
 
     # Reponer en Xray las cuentas activas del registro (la config nueva viene con clientes vacíos)
+    chmod 644 /usr/local/etc/xray/config.json
     python3 /etc/vps-manager/v2ray_ctl.py restore
     systemctl restart xray
     touch $FLAG_FILE
@@ -242,14 +243,24 @@ def status(it):
 
 
 # ── Xray ────────────────────────────────────────────────────
+def journal_tail():
+    try:
+        r = subprocess.run(["journalctl", "-u", SVC, "-n", "6", "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=10)
+        return r.stdout.strip()[-500:] if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
 def restart():
     try:
+        subprocess.run(["systemctl", "reset-failed", SVC], capture_output=True, text=True, timeout=10)
         r = subprocess.run(["systemctl", "restart", SVC], capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
-            return False, (r.stdout + r.stderr).strip()
-        time.sleep(0.8)
+            return False, ((r.stdout + r.stderr).strip() + " " + journal_tail()).strip()
+        time.sleep(1.0)
         r = subprocess.run(["systemctl", "is-active", SVC], capture_output=True, text=True, timeout=10)
-        return (r.returncode == 0 and r.stdout.strip() == "active"), (r.stdout + r.stderr).strip()
+        if r.returncode == 0 and r.stdout.strip() == "active":
+            return True, ""
+        return False, (r.stdout.strip() + " | " + journal_tail()).strip(" |")
     except Exception as e:
         return False, str(e)
 
@@ -280,7 +291,8 @@ def xray_mutate(fn):
     if r.returncode != 0:
         raise Err("Xray rechazó la configuración: " + (r.stdout + r.stderr).strip()[-300:])
     tmp = XCONF + ".panel.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    os.fchmod(fd, 0o644)            # el umask no debe dejar la config ilegible para el usuario de Xray
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(new_text)
     try:
@@ -294,8 +306,12 @@ def xray_mutate(fn):
     if not ok:
         with open(XCONF, "w", encoding="utf-8") as f:
             f.write(original)
-        restart()
-        raise Err("Xray no arrancó con el cambio (se restauró la config anterior): " + out[-200:])
+        os.chmod(XCONF, 0o644)
+        ok2, _ = restart()
+        if ok2:
+            raise Err("Xray no arrancó con el cambio (se restauró la config anterior): " + out[-400:])
+        raise Err("Xray tampoco arranca con la config anterior: el problema es del servidor (puerto 80/443 ocupado, "
+                  "certificado ilegible o servicio dañado), no de la cuenta. Detalle: " + out[-400:])
     return True
 
 def targets(cfg, proto):
