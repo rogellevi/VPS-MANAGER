@@ -197,7 +197,7 @@ if dp_running && [[ -f "$CONF" ]]; then
     echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
     echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🔌 Modificar puerto Dropbear"
     echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🔄 Reiniciar Dropbear"
-    echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🗑️  Eliminar Dropbear"
+    echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🗑️ Eliminar Dropbear"
 else
     echo -e "  Estado: ${C_RED}🔴 INACTIVO / NO INSTALADO${C_RST}"
     echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
