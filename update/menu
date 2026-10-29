@@ -1054,7 +1054,7 @@ chk_svc() {
     local s
     for s in "$@"; do
         if systemctl is-active --quiet "$s" 2>/dev/null; then
-            echo -e "${C_NEON_GREEN}ON ${C_RST}"
+            echo -e "${C_NEON_YELLOW}ON ${C_RST}"
             return
         fi
     done
@@ -1128,9 +1128,11 @@ USERS_CREADOS=$(awk -F: '$3 >= 1000 && $1 != "nobody" {c++} END{print c+0}' /etc
 ST_SSH=$(chk_svc ssh sshd)
 ST_NGINX=$(chk_svc nginx)
 ST_XRAY=$(chk_svc xray)
-ST_HCR=$(chk_svc hcr-server)
+ST_BHTTP=$(chk_svc superflash-bhttp)
 ST_STUNNEL=$(chk_svc stunnel4)
 ST_WS=$(chk_svc ws-python)
+ST_UDPGW=$(chk_svc badvpn-7300)
+ST_DROPBEAR=$(chk_svc DROPBEAR)
 SUBDOMINIO=$( [ -f /etc/vps-manager/dominio ] && cat /etc/vps-manager/dominio || echo "No Configurado" )
 echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
 echo -e "${C_NEON_BLUE}  ${C_NEON_YELLOW}${M_TITLE}   ${C_NEON_BLUE} ${C_RST}"
@@ -1140,10 +1142,10 @@ echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_IP}: ${C_RST} $IP"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_DOM}: ${C_RST} $SUBDOMINIO"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_CPU}: ${C_RST} $CPU_BAR"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_RAM}:${C_RST} $RAM_BAR ($RAM_STR)"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_USR}: ${C_RST} ${C_NEON_YELLOW}${USERS_CREADOS}${C_RST} ${M_CREATED} ${C_NEON_BLUE}|${C_RST} ${C_NEON_GREEN}${CONECTADOS}${C_RST} ${M_ONLINE}"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_USR}: ${C_RST} ${C_NEON_YELLOW}${USERS_CREADOS}${C_RST} ${M_CREATED} ${C_NEON_BLUE}|${C_RST} ${C_NEON_YELLOW}${CONECTADOS}${C_RST} ${M_ONLINE}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
-echo -e "  SSH : ${ST_SSH}  NGINX : ${ST_NGINX}  XRAY : ${ST_XRAY}"
-echo -e "  STUNNEL : ${ST_STUNNEL}  SSH-WS : ${ST_WS}  HCR : ${ST_HCR}"
+echo -e "  ${C_NEON_BLUE}SSH : ${ST_SSH} ${C_NEON_BLUE}BADVPN : ${ST_UDPGW} ${C_NEON_BLUE}XRAY : ${ST_XRAY} ${C_NEON_BLUE}BHTTP : ${ST_BHTTP}"
+echo -e "  ${C_NEON_BLUE}STUNNEL : ${ST_STUNNEL}${C_NEON_BLUE}SSH-WS : ${ST_WS} ${C_NEON_BLUE}DROPBEAR : ${ST_DROPBEAR}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "${C_NEON_PURPLE}  ${M_CAT1}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ${M_OPT1}"
