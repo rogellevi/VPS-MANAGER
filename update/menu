@@ -1049,6 +1049,17 @@ for ((i=0; i<filled; i++)); do bar="${bar}█"; done
 for ((i=0; i<empty; i++)); do bar="${bar}░"; done
 echo -e "[$bar] ${perc}%"
 }
+# Helper visual para servicios (acepta uno o varios nombres de servicio)
+chk_svc() {
+    local s
+    for s in "$@"; do
+        if systemctl is-active --quiet "$s" 2>/dev/null; then
+            echo -e "${C_NEON_GREEN}ON ${C_RST}"
+            return
+        fi
+    done
+    echo -e "${C_RED}OFF${C_RST}"
+}
 while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
@@ -1061,6 +1072,9 @@ M_CPU="🧠 CPU Usage "
 M_RAM="⚡ RAM Usage "
 M_CON="👥 Connected "
 M_ACT="active users"
+M_USR="👥 Users     "
+M_CREATED="Created"
+M_ONLINE="Online"
 M_CAT1="[ ACCOUNT MANAGEMENT ]"
 M_OPT1="👤 SSH Management (Users, Limit, HWID)"
 M_CAT2="[ TOOLS & SYSTEM ]"
@@ -1077,13 +1091,16 @@ M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
 M_TITLE="           🚀 VPS MANAGER - V5.2 🚀"
-M_OS="💻 SO        "
-M_IP="🌐 IP        "
-M_DOM="🎯 Dominio   "
-M_CPU="🧠 CPU Uso   "
-M_RAM="⚡ RAM Uso   "
+M_OS="💻 SO       "
+M_IP="🌐 IP       "
+M_DOM="🎯 Dominio  "
+M_CPU="🧠 CPU Uso  "
+M_RAM="⚡ RAM Uso  "
 M_CON="👥 Conectados"
 M_ACT="usuarios Online"
+M_USR="👥 Usuarios "
+M_CREATED="Creados"
+M_ONLINE="En Línea"
 M_CAT1="[ GESTIÓN DE CUENTAS ]"
 M_OPT1="👤 Gestión de SSH (Usuarios, Límite, HWID)"
 M_CAT2="[ HERRAMIENTAS Y SISTEMA ]"
@@ -1107,16 +1124,26 @@ RAM_BAR=$(draw_bar $RAM_PER)
 CPU_PER=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}' | cut -d'.' -f1); [ -z "$CPU_PER" ] && CPU_PER=0
 CPU_BAR=$(draw_bar $CPU_PER)
 CONECTADOS=$(ps -ef | grep -E "sshd|dropbear" | grep -v root | grep -v grep | wc -l)
+USERS_CREADOS=$(awk -F: '$3 >= 1000 && $1 != "nobody" {c++} END{print c+0}' /etc/passwd)
+ST_SSH=$(chk_svc ssh sshd)
+ST_NGINX=$(chk_svc nginx)
+ST_XRAY=$(chk_svc xray)
+ST_HCR=$(chk_svc hcr-server)
+ST_STUNNEL=$(chk_svc stunnel4)
+ST_WS=$(chk_svc ws-python)
 SUBDOMINIO=$( [ -f /etc/vps-manager/dominio ] && cat /etc/vps-manager/dominio || echo "No Configurado" )
 echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
 echo -e "${C_NEON_BLUE}  ${C_NEON_YELLOW}${M_TITLE}   ${C_NEON_BLUE} ${C_RST}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_OS}:${C_RST} $OS"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_IP}:${C_RST} $IP"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_DOM}:${C_RST} $SUBDOMINIO"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_CPU}:${C_RST} $CPU_BAR"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_OS}: ${C_RST} $OS"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_IP}: ${C_RST} $IP"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_DOM}: ${C_RST} $SUBDOMINIO"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_CPU}: ${C_RST} $CPU_BAR"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_RAM}:${C_RST} $RAM_BAR ($RAM_STR)"
-echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_CON}:${C_RST} $CONECTADOS $M_ACT"
+echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_USR}: ${C_RST} ${C_NEON_YELLOW}${USERS_CREADOS}${C_RST} ${M_CREATED} ${C_NEON_BLUE}|${C_RST} ${C_NEON_GREEN}${CONECTADOS}${C_RST} ${M_ONLINE}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "  SSH : ${ST_SSH}  NGINX : ${ST_NGINX}  XRAY : ${ST_XRAY}"
+echo -e "  STUNNEL : ${ST_STUNNEL}  SSH-WS : ${ST_WS}  HCR : ${ST_HCR}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "${C_NEON_PURPLE}  ${M_CAT1}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ${M_OPT1}"
