@@ -192,7 +192,7 @@ echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}          🐻 ADMINISTRAR DROPBEAR      
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 
 if dp_running && [[ -f "$CONF" ]]; then
-    echo -e "  Estado: ${C_GREEN}🟢 ACTIVO${C_RST}"
+    echo -e "  Estado: ${C_GREEN}🟢 ACTIVO ${C_RST}"
     echo -e "  ${C_CYAN}Puertos:${C_RST} ${C_NEON_YELLOW}$(dp_ports)${C_RST}"
     echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
     echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🔌 Modificar puerto Dropbear"
