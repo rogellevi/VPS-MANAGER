@@ -1,282 +1,141 @@
-#!/usr/bin/env python3
-# encoding: utf-8
-import socket
-import threading
-import select
-import signal
-import sys
-import time
-import getopt
+#!/bin/bash
+# ==========================================
+# INSTALADOR WSPROXY - VPS MANAGER V5.2
+# ==========================================
 
-PASS = '101'
-LISTENING_ADDR = '0.0.0.0'
-try:
-    LISTENING_PORT = int(sys.argv[1])
-except:
-    LISTENING_PORT = 80
-BUFLEN = 4096 * 4
-TIMEOUT = 60
-MSG = '101'
-COR = '<font color="yellow"><big><big>'
-FTAG = '</font></big></big>'
-DEFAULT_HOST = "127.0.0.1:22"
-RESPONSE = "HTTP/1.1 101 internet premium\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nHTTP/1.1 200 Connection Established\r\n\r\n"
+# Colores (idénticos al menú principal)
+C_RST='\033[0m'
+C_RED='\033[1;31m'
+C_GREEN='\033[1;32m'
+C_YELLOW='\033[1;33m'
+C_CYAN='\033[1;36m'
+C_NEON_BLUE='\033[38;5;39m'
+C_NEON_GREEN='\033[38;5;46m'
 
-class Server(threading.Thread):
-    def __init__(self, host, port):
-        threading.Thread.__init__(self)
-        self.running = False
-        self.host = host
-        self.port = port
-        self.threads = []
-        self.threadsLock = threading.Lock()
-        self.logLock = threading.Lock()
+# Verificar root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${C_RED}[!] Este script debe ejecutarse como root.${C_RST}"
+    sleep 2
+    exit 1
+fi
 
-    def run(self):
-        self.soc = socket.socket(socket.AF_INET)
-        self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.soc.settimeout(2)
-        self.soc.bind((self.host, self.port))
-        self.soc.listen(0)
-        self.running = True
+clear
+echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🌐 INSTALADOR WSPROXY (WebSocket)      ${C_NEON_BLUE} ${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 
-        try:
-            while self.running:
-                try:
-                    c, addr = self.soc.accept()
-                    c.setblocking(1)
-                except socket.timeout:
-                    continue
+# Verificar si ya está instalado
+if [ -f /etc/vps-manager/wsproxy.py ] || systemctl is-active --quiet wsproxy.service 2>/dev/null; then
+    echo -e "${C_YELLOW}[!] WSProxy ya parece estar instalado en el sistema.${C_RST}"
+    read -p "¿Desea reconfigurar los parámetros (Puerto/Pass/Backend)? (s/n): " reconf
+    if [[ "$reconf" != "s" && "$reconf" != "S" ]]; then
+        echo -e "${C_GREEN}[✔] Operación cancelada. Volviendo al menú...${C_RST}"
+        sleep 2
+        exit 0
+    fi
+fi
 
-                conn = ConnectionHandler(c, self, addr)
-                conn.start()
-                self.addConn(conn)
-        finally:
-            self.running = False
-            self.soc.close()
+# Solicitar puerto de escucha
+while true; do
+    echo -ne "${C_YELLOW}Ingrese el puerto de escucha para WSProxy (ej. 80, 8080, 8880): ${C_RST}"
+    read WS_PORT
+    
+    if [[ ! "$WS_PORT" =~ ^[0-9]+$ ]] || [ "$WS_PORT" -lt 1 ] || [ "$WS_PORT" -gt 65535 ]; then
+        echo -e "${C_RED}[!] Puerto no válido. Debe ser un número entre 1 y 65535.${C_RST}"
+        continue
+    fi
+    
+    if ss -lntp 2>/dev/null | grep -q ":$WS_PORT "; then
+        local svc=$(ss -lntp 2>/dev/null | grep ":$WS_PORT " | awk '{print $NF}' | cut -d'"' -f2)
+        echo -e "${C_RED}[!] El puerto $WS_PORT ya está en uso por: $svc${C_RST}"
+        read -p "¿Desea usarlo de todos modos? (s/n): " usar
+        if [[ "$usar" != "s" && "$usar" != "S" ]]; then
+            continue
+        fi
+    fi
+    break
+done
 
-    def printLog(self, log):
-        self.logLock.acquire()
-        print(log)
-        self.logLock.release()
+# Solicitar contraseña
+echo -ne "${C_YELLOW}Ingrese la contraseña de acceso (X-Pass) [Default: 101]: ${C_RST}"
+read WS_PASS
+[ -z "$WS_PASS" ] && WS_PASS="101"
 
-    def addConn(self, conn):
-        try:
-            self.threadsLock.acquire()
-            if self.running:
-                self.threads.append(conn)
-        finally:
-            self.threadsLock.release()
+# Solicitar backend
+echo -ne "${C_YELLOW}Ingrese el backend de destino (IP:Puerto) [Default: 127.0.0.1:22]: ${C_RST}"
+read WS_BACKEND
+[ -z "$WS_BACKEND" ] && WS_BACKEND="127.0.0.1:22"
 
-    def removeConn(self, conn):
-        try:
-            self.threadsLock.acquire()
-            self.threads.remove(conn)
-        finally:
-            self.threadsLock.release()
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "${C_GREEN}[+] Configuración seleccionada:${C_RST}"
+echo -e "  ➔ Puerto de Escucha: ${C_YELLOW}$WS_PORT${C_RST}"
+echo -e "  ➔ Contraseña (X-Pass): ${C_YELLOW}$WS_PASS${C_RST}"
+echo -e "  ➔ Backend Destino: ${C_YELLOW}$WS_BACKEND${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 
-    def close(self):
-        try:
-            self.running = False
-            self.threadsLock.acquire()
+read -p "¿Proceder con la instalación/configuración? (s/n): " confirm
+if [[ "$confirm" != "s" && "$confirm" != "S" ]]; then
+    echo -e "${C_RED}[!] Instalación cancelada. Volviendo al menú...${C_RST}"
+    sleep 2
+    exit 0
+fi
 
-            threads = list(self.threads)
-            for c in threads:
-                c.close()
-        finally:
-            self.threadsLock.release()
+echo -e "${C_YELLOW}[+] Instalando dependencias (Python3)...${C_RST}"
+apt-get update -y > /dev/null 2>&1
+apt-get install python3 -y > /dev/null 2>&1
 
+echo -e "${C_YELLOW}[+] Descargando motor WSProxy...${C_RST}"
+mkdir -p /etc/vps-manager
+wget -qO /etc/vps-manager/wsproxy.py https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/wsproxy.py
 
-class ConnectionHandler(threading.Thread):
-    def __init__(self, socClient, server, addr):
-        threading.Thread.__init__(self)
-        self.clientClosed = False
-        self.targetClosed = True
-        self.client = socClient
-        self.client_buffer = '101'
-        self.server = server
-        self.log = 'Connection: ' + str(addr)
+if [ ! -f /etc/vps-manager/wsproxy.py ]; then
+    echo -e "${C_RED}[!] Error al descargar wsproxy.py. Verifique la URL en GitHub.${C_RST}"
+    sleep 3
+    exit 1
+fi
 
-    def close(self):
-        try:
-            if not self.clientClosed:
-                self.client.shutdown(socket.SHUT_RDWR)
-                self.client.close()
-        except:
-            pass
-        finally:
-            self.clientClosed = True
+echo -e "${C_YELLOW}[+] Aplicando configuración personalizada...${C_RST}"
+# Usamos | como delimitador en sed para evitar conflictos con las barras del backend
+sed -i "s|^PASS = '.*'|PASS = '$WS_PASS'|" /etc/vps-manager/wsproxy.py
+sed -i "s|^DEFAULT_HOST = \".*\"|DEFAULT_HOST = \"$WS_BACKEND\"|" /etc/vps-manager/wsproxy.py
 
-        try:
-            if not self.targetClosed:
-                self.target.shutdown(socket.SHUT_RDWR)
-                self.target.close()
-        except:
-            pass
-        finally:
-            self.targetClosed = True
+echo -e "${C_YELLOW}[+] Creando servicio systemd...${C_RST}"
+cat > /etc/systemd/system/wsproxy.service << EOF
+[Unit]
+Description=VPS-Manager WSProxy (WebSocket Proxy)
+After=network-online.target
 
-    def run(self):
-        try:
-            self.client_buffer = self.client.recv(BUFLEN)
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /etc/vps-manager/wsproxy.py -b 0.0.0.0 -p $WS_PORT
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
 
-            hostPort = self.findHeader(self.client_buffer, 'X-Real-Host')
+[Install]
+WantedBy=multi-user.target
+EOF
 
-            if hostPort == '101':
-                hostPort = DEFAULT_HOST
+systemctl daemon-reload > /dev/null 2>&1
+systemctl enable wsproxy.service > /dev/null 2>&1
+systemctl restart wsproxy.service > /dev/null 2>&1
 
-            split = self.findHeader(self.client_buffer, 'X-Split')
+# Configurar UFW si está activo
+if command -v ufw > /dev/null && ufw status | grep -q "active"; then
+    ufw allow "$WS_PORT/tcp" > /dev/null 2>&1
+    ufw reload > /dev/null 2>&1
+fi
 
-            if split != '101':
-                self.client.recv(BUFLEN)
-
-            if hostPort != '101':
-                passwd = self.findHeader(self.client_buffer, 'X-Pass')
-
-                if len(PASS) != 0 and passwd == PASS:
-                    self.method_CONNECT(hostPort)
-                elif len(PASS) != 0 and passwd != PASS:
-                    self.client.send(b'HTTP/1.1 400 WrongPass!\r\n\r\n')
-                elif hostPort.startswith('127.0.0.1') or hostPort.startswith('localhost'):
-                    self.method_CONNECT(hostPort)
-                else:
-                    self.client.send(b'HTTP/1.1 403 Forbidden!\r\n\r\n')
-            else:
-                print('- No X-Real-Host!')
-                self.client.send(b'HTTP/1.1 400 NoXRealHost!\r\n\r\n')
-
-        except Exception as e:
-            self.log += ' - error: ' + str(e)
-            self.server.printLog(self.log)
-            pass
-        finally:
-            self.close()
-            self.server.removeConn(self)
-
-    def findHeader(self, head, header):
-        # Convertimos a string si llega como bytes
-        if isinstance(head, bytes):
-            head = head.decode('utf-8', errors='ignore')
-
-        aux = head.find(header + ': ')
-
-        if aux == -1:
-            return '101'
-
-        aux = head.find(':', aux)
-        head = head[aux+2:]
-        aux = head.find('\r\n')
-
-        if aux == -1:
-            return '101'
-
-        return head[:aux]
-
-    def connect_target(self, host):
-        i = host.find(':')
-        if i != -1:
-            port = int(host[i+1:])
-            host = host[:i]
-        else:
-            if self.method == 'CONNECT':
-                port = 443
-            else:
-                port = 80
-
-        (soc_family, soc_type, proto, _, address) = socket.getaddrinfo(host, port)[0]
-
-        self.target = socket.socket(soc_family, soc_type, proto)
-        self.targetClosed = False
-        self.target.connect(address)
-
-    def method_CONNECT(self, path):
-        self.log += ' - CONNECT ' + path
-
-        self.connect_target(path)
-        self.client.sendall(RESPONSE.encode())
-        self.client_buffer = '101'
-
-        self.server.printLog(self.log)
-        self.doCONNECT()
-
-    def doCONNECT(self):
-        socs = [self.client, self.target]
-        count = 0
-        error = False
-        while True:
-            count += 1
-            (recv, _, err) = select.select(socs, [], socs, 3)
-            if err:
-                error = True
-            if recv:
-                for in_ in recv:
-                    try:
-                        data = in_.recv(BUFLEN)
-                        if data:
-                            if in_ is self.target:
-                                self.client.send(data)
-                            else:
-                                while data:
-                                    byte = self.target.send(data)
-                                    data = data[byte:]
-
-                            count = 0
-                        else:
-                            break
-                    except:
-                        error = True
-                        break
-            if count == TIMEOUT:
-                error = True
-
-            if error:
-                break
-
-
-def print_usage():
-    print('Use: proxy.py -p <port>')
-    print('       proxy.py -b <ip> -p <porta>')
-    print('       proxy.py -b 0.0.0.0 -p 22')
-
-
-def parse_args(argv):
-    global LISTENING_ADDR
-    global LISTENING_PORT
-
-    try:
-        opts, args = getopt.getopt(argv, "hb:p:", ["bind=", "port="])
-    except getopt.GetoptError:
-        print_usage()
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print_usage()
-            sys.exit()
-        elif opt in ("-b", "--bind"):
-            LISTENING_ADDR = arg
-        elif opt in ("-p", "--port"):
-            LISTENING_PORT = int(arg)
-
-
-def main(host=LISTENING_ADDR, port=LISTENING_PORT):
-
-    print("\033[0;34m━"*8, "\033[1;32m PROXY WEBSOCKET", "\033[0;34m━"*8, "\n")
-    print("\033[1;33mIP:\033[1;32m " + LISTENING_ADDR)
-    print("\033[1;33mPORTA:\033[1;32m " + str(LISTENING_PORT) + "\n")
-    print("\033[0;34m━"*10, "\033[1;32m VPSMANAGER", "\033[0;34m━\033[1;37m"*11, "\n")
-
-    server = Server(LISTENING_ADDR, LISTENING_PORT)
-    server.start()
-
-    while True:
-        try:
-            time.sleep(2)
-        except KeyboardInterrupt:
-            print('Parando...')
-            server.close()
-            break
-
-
-if __name__ == '__main__':
-    parse_args(sys.argv[1:])
-    main()
+clear
+echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         ✅ WSPROXY INSTALADO CON ÉXITO         ${C_NEON_BLUE} ${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "  ${C_GREEN}Configuración activa:${C_RST}"
+echo -e "  ➔ Puerto: ${C_YELLOW}$WS_PORT${C_RST}"
+echo -e "  ➔ Pass: ${C_YELLOW}$WS_PASS${C_RST}"
+echo -e "  ➔ Backend: ${C_YELLOW}$WS_BACKEND${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "  ${C_CYAN}Estado del servicio:${C_RST} $(systemctl is-active wsproxy.service | awk '{print ($1=="active" ? "🟢 ACTIVO" : "🔴 INACTIVO")}') "
+echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+echo -e "${C_GREEN}[✔] Volviendo al menú principal en 3 segundos...${C_RST}"
+sleep 3
