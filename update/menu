@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# VPS MANAGER  - Panel V2.0
+# VPS MANAGER  - Panel V2.1
 # ==========================================
 C_RST='\033[0m'; C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;36m'
 C_NEON_BLUE='\033[38;5;39m'; C_NEON_GREEN='\033[38;5;46m'; C_NEON_PURPLE='\033[38;5;141m'; C_NEON_YELLOW='\033[38;5;226m'
@@ -1005,8 +1005,8 @@ menu_hcr() {
         echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
         echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚀 INSTALAR HCR NATIVO               ${C_NEON_BLUE} ${C_RST}"
         echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
-        echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar HCR Nativo (v1.0)"
-        echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🚀 Instalar HCR Nativo (v2.0 Nuevo) ${C_GREEN}${hcr2_ind}${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar HCR (v1.0)"
+        echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🚀 Instalar HCR (v2.0) ${C_GREEN}${hcr2_ind}${C_RST}"
         echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🗑️ Desinstalar HCR v2.0"
         echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
         echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Anterior"
@@ -1030,7 +1030,7 @@ hcr2_instalar() {
     local DIR="$HCR2_DIR" BASE="$HCR2_URL"
     clear
     echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
-    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚀 INSTALAR HCR NATIVO (v2.0)        ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚀 Instalar HCR (v2.0)        ${C_NEON_BLUE} ${C_RST}"
     echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
 
     # 1) Arquitectura del servidor
@@ -1148,7 +1148,7 @@ hcr2_desinstalar() {
     local DIR="$HCR2_DIR"
     clear
     echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
-    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🗑️ DESINSTALAR HCR NATIVO (v2.0)      ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🗑️ DESInstalar HCR (v2.0)      ${C_NEON_BLUE} ${C_RST}"
     echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
     if [ ! -f "$DIR/hcr-server" ] && [ ! -e /etc/systemd/system/hcr-server.service ]; then
         echo -e "${C_YELLOW}[!] HCR v2.0 no está instalado.${C_RST}"
@@ -1637,7 +1637,7 @@ echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🛡️ Menú Xray (VMess)"
 echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🛡️ Menú Xray (VLESS)"
 echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🛡️ Menú Xray (Trojan)"
 echo -e "  ${C_NEON_YELLOW}4.${C_RST} 🌐 Instalar OpenVPN (Web Perfiles)"
-echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🚀 Instalar HCR Nativo (v1.0 / v2.0)"
+echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🚀 Instalar HCR (v1.0 / v2.0)"
 echo -e "  ${C_NEON_YELLOW}6.${C_RST} 🎮 Instalar UDP Custom (Puerto 25000)"
 echo -e "  ${C_NEON_YELLOW}7.${C_RST} 🛸 Instalar SlowDNS (DNSTT)"
 echo -e "  ${C_NEON_YELLOW}8.${C_RST} 🌐 Instalar BHTTP (v1.0 / v2.0)"
@@ -1686,17 +1686,17 @@ clear
 echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
 echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🌐 GESTIÓN DEL PANEL WEB (Dashboard)   ${C_NEON_BLUE} ${C_RST}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
-echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🔄 Actualizar Panel Web (app.py)"
+echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar Panel Web (Nuevo)"
 echo -e "  ${C_NEON_YELLOW}2.${C_RST} ⚙️ Cambiar Puerto del Panel"
 echo -e "  ${C_NEON_YELLOW}3.${C_RST} ⏹️ Detener Panel Web"
 echo -e "  ${C_NEON_YELLOW}4.${C_RST} 🔁 Reiniciar Panel Web"
-echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🚀 Generar/Instalar Panel Web (Nuevo)"
+echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🔄 Actualizar Panel Web (app.py)"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Principal"
 echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
 read -p "Seleccione una opción: " wopt
 case $wopt in
-1)
+5)
 echo -e "${C_YELLOW}[+] Descargando actualización del Panel Web...${C_RST}"
 mkdir -p /etc/vps-manager/webpanel
 wget -qO /tmp/app.py https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/update/panel.py
@@ -1733,7 +1733,7 @@ systemctl restart vps-webpanel.service 2>/dev/null || (pkill -f "app.py" 2>/dev/
 echo -e "${C_GREEN}[✔] Panel Web reiniciado.${C_RST}"
 read -p "Presione Enter para continuar..."
 ;;
-5)
+1)
 echo -e "${C_YELLOW}[+] Preparando Instalación del Panel Web...${C_RST}"
 wget -qO /tmp/webpanel.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/webpanel.sh && chmod +x /tmp/webpanel.sh && bash /tmp/webpanel.sh
 read -p "Presione Enter para continuar..."
@@ -2042,7 +2042,7 @@ while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 if [ "$SYS_LANG" == "en" ]; then
-M_TITLE="            🚀 VPS MANAGER - V2.0  🚀"
+M_TITLE="            🔥 VPS MANAGER - V2.1  🔥"
 M_OS="💻 OS        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Domain    "
@@ -2054,21 +2054,21 @@ M_USR="👥 Users     "
 M_CREATED="Created"
 M_ONLINE="Online"
 M_CAT1="[ ACCOUNT MANAGEMENT ]"
-M_OPT1="👤 User Management (SSH, TOKENID)"
+M_OPT1="👤 User Management (SSH - TOKENID)"
 M_CAT2="[ TOOLS & SYSTEM ]"
 M_OPT2="🛠️ Installers & Protocols Manager"
-M_OPT3="🎨 Configure HTML Welcome Banner"
+M_OPT3="🎨 Configure HTML Banner"
 M_OPT4="🔍 Ports Monitor (Active / Inactive)"
 M_OPT5="🌐 Web Panel Management (Dashboard UI)"
 M_OPT6="🔄 Update Script"
-M_OPT7="👥 Install CheckUser (Multi-App Monitor)"
+M_OPT7="👥 Install CheckUser (Multi-App)"
 M_OPT8="🔧 Tools & System (Advanced)"
 M_OPT88="❌ Uninstall Script"
 M_OPT0="🚪 Exit"
 M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
-M_TITLE="           🚀 VPS MANAGER - V2.0🚀"
+M_TITLE="           🔥 VPS MANAGER - V2.1 🔥"
 M_OS="💻 SO       "
 M_IP="🌐 IP       "
 M_DOM="🎯 Dominio  "
@@ -2080,14 +2080,14 @@ M_USR="👥 Usuarios "
 M_CREATED="Creados"
 M_ONLINE="En Línea"
 M_CAT1="[ GESTIÓN DE CUENTAS ]"
-M_OPT1="👤 Gestión de Usuarios (SSH, TOKENID)"
+M_OPT1="👤 Gestión de Usuarios (SSH - TOKENID)"
 M_CAT2="[ HERRAMIENTAS Y SISTEMA ]"
 M_OPT2="🛠️ Gestor de Instalaciones y Protocolos"
-M_OPT3="🎨 Configurar Banner HTML de Bienvenida"
+M_OPT3="🎨 Configurar Banner HTML"
 M_OPT4="🔍 Monitor de Puertos (Activos / Inactivos)"
 M_OPT5="🌐 Gestionar Panel Web (Dashboard UI)"
 M_OPT6="🔄 Actualizar Script"
-M_OPT7="👥 Instalar CheckUser (Monitor Multi-App)"
+M_OPT7="👥 Instalar CheckUser (Multi-App)"
 M_OPT8="🔧 Herramientas y Sistema (Avanzado)"
 M_OPT88="❌ Desinstalar Script"
 M_OPT0="🚪 Salir"
@@ -2109,6 +2109,7 @@ ST_XRAY=$(chk_svc xray)
 ST_BHTTP=$(chk_svc superflash-bhttp)
 ST_STUNNEL=$(chk_svc stunnel4)
 ST_WS=$(chk_svc wsproxy)
+ST_HCR=$(chk_svc hcr-server)
 ST_UDPGW=$(chk_svc badvpn-7300)
 ST_DROPBEAR=$(chk_svc dropbear)
 SUBDOMINIO=$( [ -f /etc/vps-manager/dominio ] && cat /etc/vps-manager/dominio || echo "No Configurado" )
@@ -2123,7 +2124,7 @@ echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_RAM}:${C_RST} $RAM_BAR ($RAM_STR)"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_USR}: ${C_RST} ${C_NEON_YELLOW}${USERS_CREADOS}${C_RST} ${M_CREATED} ${C_NEON_BLUE}|${C_RST} ${C_NEON_YELLOW}${CONECTADOS}${C_RST} ${M_ONLINE}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_BLUE}SSH: ${ST_SSH} ${C_NEON_BLUE}BADVPN: ${ST_UDPGW} ${C_NEON_BLUE}XRAY: ${ST_XRAY} ${C_NEON_BLUE}BHTTP: ${ST_BHTTP}"
-echo -e "  ${C_NEON_BLUE}STUNNEL: ${ST_STUNNEL}${C_NEON_BLUE}WS: ${ST_WS} ${C_NEON_BLUE}DROPBEAR: ${ST_DROPBEAR}"
+echo -e "  ${C_NEON_BLUE}STUNNEL: ${ST_STUNNEL}${C_NEON_BLUE}WS: ${ST_WS} ${C_NEON_BLUE}DROPBEAR: ${ST_DROPBEAR} ${C_NEON_BLUE}HCR: ${ST_HCR}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "${C_NEON_PURPLE}  ${M_CAT1}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ${M_OPT1}"
