@@ -1,11 +1,20 @@
 #!/bin/bash
 # ==========================================
 # Módulo Unificado: VMess (XRAY)
-# Puertos: 80 (NTLS) y 443 (TLS)
+# Puerto: 443 (solo TLS, sin puerto 80)
 # Compatible en simultáneo con VLESS
 # Cuentas con vencimiento real (registro compartido con el panel web)
 # ==========================================
-C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;36m'; C_NC='\033[0m'
+C_RST='\033[0m'; C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;36m'
+C_NEON_BLUE='\033[38;5;39m'; C_NEON_GREEN='\033[38;5;46m'; C_NEON_PURPLE='\033[38;5;141m'; C_NEON_YELLOW='\033[38;5;226m'
+LINEA="══════════════════════════════════════════════"
+
+# Caja con el mismo estilo del menú principal
+cabecera() {
+    echo -e "${C_NEON_BLUE}╔${LINEA}╗${C_RST}"
+    echo -e "${C_NEON_BLUE}  ${C_NEON_YELLOW}$1${C_RST}"
+    echo -e "${C_NEON_BLUE}╚${LINEA}╝${C_RST}"
+}
 XRAY_DIR="/usr/local/etc/xray"
 CONF_FILE="$XRAY_DIR/config.json"
 DOM_FILE="/etc/vps-manager/dominio"
@@ -14,43 +23,45 @@ FLAG_FILE="/etc/vps-manager/xray_dual_ok"
 
 instalar_xray_dual() {
     clear
-    echo -e "${C_CYAN}================================================${C_NC}"
-    echo -e "${C_GREEN}   INSTALACIÓN DUAL XRAY (80 NTLS + 443 TLS)    ${C_NC}"
-    echo -e "${C_CYAN}================================================${C_NC}"
+    cabecera "INSTALACIÓN XRAY (SOLO TLS 443)"
     
     read -p "Ingresa tu dominio (Ej: centrix.golbertvps.online): " DOMINIO
-    if [ -z "$DOMINIO" ]; then echo -e "${C_RED}[!] Dominio inválido.${C_NC}"; sleep 2; return; fi
+    if [ -z "$DOMINIO" ]; then echo -e "${C_RED}[!] Dominio inválido.${C_RST}"; sleep 2; return; fi
     mkdir -p /etc/vps-manager
     echo "$DOMINIO" > $DOM_FILE
 
-    echo -e "${C_YELLOW}[+] Instalando dependencias y núcleo Xray...${C_NC}"
+    echo -e "${C_YELLOW}[+] Instalando dependencias y núcleo Xray...${C_RST}"
     apt update -y >/dev/null 2>&1
-    apt install -y certbot jq uuid-runtime curl iptables ufw psmisc openssl python3 qrencode >/dev/null 2>&1
+    apt install -y certbot jq uuid-runtime curl iptables ufw psmisc openssl python3 >/dev/null 2>&1
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install >/dev/null 2>&1
 
-    echo -e "${C_YELLOW}[+] Liberando puertos 80 y 443...${C_NC}"
+    echo -e "${C_YELLOW}[+] Liberando puerto 443...${C_RST}"
     systemctl stop nginx apache2 haproxy xray 2>/dev/null
-    fuser -k 80/tcp 2>/dev/null
     fuser -k 443/tcp 2>/dev/null
 
     mkdir -p $XRAY_DIR
-    echo -e "${C_YELLOW}[+] Configurando Certificado SSL para puerto 443...${C_NC}"
+    echo -e "${C_YELLOW}[+] Configurando Certificado SSL para puerto 443...${C_RST}"
     if [ ! -f "/etc/letsencrypt/live/$DOMINIO/fullchain.pem" ]; then
-        certbot certonly --standalone -d "$DOMINIO" --non-interactive --agree-tos -m "admin@$DOMINIO" >/dev/null 2>&1
+        # Let's Encrypt valida por el puerto 80 solo al emitir; Xray ya no lo usa.
+        if ss -ltnH 'sport = :80' 2>/dev/null | grep -q .; then
+            echo -e "${C_RED}[!] El puerto 80 está ocupado por otro servicio: no se puede emitir el certificado Let's Encrypt.${C_RST}"
+        else
+            certbot certonly --standalone -d "$DOMINIO" --non-interactive --agree-tos -m "admin@$DOMINIO" >/dev/null 2>&1
+        fi
     fi
 
     if [ -f "/etc/letsencrypt/live/$DOMINIO/fullchain.pem" ]; then
         cp /etc/letsencrypt/live/$DOMINIO/fullchain.pem $XRAY_DIR/server.crt
         cp /etc/letsencrypt/live/$DOMINIO/privkey.pem $XRAY_DIR/server.key
     else
-        echo -e "${C_YELLOW}[!] Generando certificado SSL autofirmado de respaldo...${C_NC}"
+        echo -e "${C_YELLOW}[!] Generando certificado SSL autofirmado de respaldo...${C_RST}"
         openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
             -keyout $XRAY_DIR/server.key -out $XRAY_DIR/server.crt \
             -subj "/C=PE/ST=Lima/L=Lima/O=VPS/CN=$DOMINIO" >/dev/null 2>&1
     fi
     chmod 644 $XRAY_DIR/server.crt $XRAY_DIR/server.key
 
-    echo -e "${C_YELLOW}[+] Aplicando permisos root y estructura dual (80 y 443)...${C_NC}"
+    echo -e "${C_YELLOW}[+] Aplicando permisos root y estructura TLS (443)...${C_RST}"
     sed -i 's/User=nobody/User=root/g' /etc/systemd/system/xray.service 2>/dev/null
     systemctl daemon-reload
 
@@ -83,22 +94,6 @@ instalar_xray_dual() {
             }
           ]
         }
-      }
-    },
-    {
-      "port": 80,
-      "protocol": "vless",
-      "settings": {
-        "clients": [],
-        "decryption": "none",
-        "fallbacks": [
-          { "path": "/vless", "dest": 10001 },
-          { "path": "/vmess", "dest": 10002 }
-        ]
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "none"
       }
     },
     {
@@ -141,10 +136,8 @@ instalar_xray_dual() {
 }
 EOF
 
-    iptables -I INPUT -p tcp --dport 80 -j ACCEPT
     iptables -I INPUT -p tcp --dport 443 -j ACCEPT
     iptables-save > /etc/iptables.up.rules 2>/dev/null
-    ufw allow 80/tcp >/dev/null 2>&1
     ufw allow 443/tcp >/dev/null 2>&1
 
     # Reponer en Xray las cuentas activas del registro (la config nueva viene con clientes vacíos)
@@ -152,7 +145,7 @@ EOF
     python3 /etc/vps-manager/v2ray_ctl.py restore
     systemctl restart xray
     touch $FLAG_FILE
-    echo -e "${C_GREEN}[✔] ¡Puertos 80 (NTLS) y 443 (TLS) activos para VLESS y VMess!${C_NC}"
+    echo -e "${C_GREEN}[✔] ¡Puerto 443 (TLS) activo para VLESS y VMess!${C_RST}"
     sleep 2
 }
 
@@ -180,7 +173,8 @@ SVC = os.environ.get("XRAY_SERVICE", "xray")
 NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,40}$")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 G, Y, C, R, N = "\033[1;32m", "\033[1;33m", "\033[1;36m", "\033[1;31m", "\033[0m"
-LINE = Y + "─" * 47 + N
+NB, NG, NY = "\033[38;5;39m", "\033[38;5;46m", "\033[38;5;226m"   # paleta neón del menú principal
+LINE = NB + "═" * 46 + N
 
 
 class Err(Exception):
@@ -398,8 +392,220 @@ def vless_link(alias, dom, uid, tls):
 
 def links(proto, name, dom, uid):
     mk = vless_link if proto == "vless" else vmess_link
-    return mk(f"{name}-TLS", dom, uid, True), mk(f"{name}-NTLS", dom, uid, False)
+    return mk(f"{name}-TLS", dom, uid, True), ""      # solo TLS (443); ya no se genera enlace NTLS
 
+
+# ── Generador de códigos QR (sin dependencias; modo byte, corrección L, versiones 1-40) ──
+_QR_ECC = (-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30)
+_QR_BLK = (-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25)
+
+def _qr_mul(x, y):
+    z = 0
+    for i in range(7, -1, -1):
+        z = (z << 1) ^ ((z >> 7) * 0x11D)
+        z ^= ((y >> i) & 1) * x
+    return z
+
+def _qr_divisor(deg):
+    res = [0] * (deg - 1) + [1]
+    root = 1
+    for _ in range(deg):
+        for j in range(deg):
+            res[j] = _qr_mul(res[j], root)
+            if j + 1 < deg:
+                res[j] ^= res[j + 1]
+        root = _qr_mul(root, 2)
+    return res
+
+def _qr_rem(data, div):
+    res = [0] * len(div)
+    for b in data:
+        f = b ^ res.pop(0)
+        res.append(0)
+        for i, c in enumerate(div):
+            res[i] ^= _qr_mul(c, f)
+    return res
+
+def _qr_raw(ver):
+    r = (16 * ver + 128) * ver + 64
+    if ver >= 2:
+        na = ver // 7 + 2
+        r -= (25 * na - 10) * na - 55
+        if ver >= 7:
+            r -= 36
+    return r
+
+def _qr_matrix(text):
+    """Devuelve la matriz de módulos (lista de listas de bool) para `text`."""
+    raw = text.encode("utf-8")
+    for ver in range(1, 41):
+        cap = _qr_raw(ver) // 8 - _QR_ECC[ver] * _QR_BLK[ver]
+        ccbits = 8 if ver < 10 else 16
+        if 4 + ccbits + 8 * len(raw) <= cap * 8:
+            break
+    else:
+        raise ValueError("Texto demasiado largo para un QR")
+    bits = [0, 1, 0, 0] + [(len(raw) >> i) & 1 for i in range(ccbits - 1, -1, -1)]
+    for b in raw:
+        bits += [(b >> i) & 1 for i in range(7, -1, -1)]
+    bits += [0] * min(4, cap * 8 - len(bits))
+    bits += [0] * (-len(bits) % 8)
+    data = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    pad = 0xEC
+    while len(data) < cap:
+        data.append(pad)
+        pad ^= 0xEC ^ 0x11
+    nb, el, rawcw = _QR_BLK[ver], _QR_ECC[ver], _qr_raw(ver) // 8
+    nshort, slen = nb - rawcw % nb, rawcw // nb
+    div, blocks, k = _qr_divisor(el), [], 0
+    for i in range(nb):
+        dat = data[k:k + slen - el + (0 if i < nshort else 1)]
+        k += len(dat)
+        ecc = _qr_rem(dat, div)
+        if i < nshort:
+            dat = dat + [0]
+        blocks.append(dat + ecc)
+    cw = []
+    for i in range(len(blocks[0])):
+        for j, blk in enumerate(blocks):
+            if i != slen - el or j >= nshort:
+                cw.append(blk[i])
+
+    size = ver * 4 + 17
+    mod = [[False] * size for _ in range(size)]
+    fn = [[False] * size for _ in range(size)]
+    def setf(x, y, d):
+        mod[y][x] = bool(d); fn[y][x] = True
+    for i in range(size):
+        setf(6, i, i % 2 == 0); setf(i, 6, i % 2 == 0)
+    for cx, cy in ((3, 3), (size - 4, 3), (3, size - 4)):
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                x, y = cx + dx, cy + dy
+                if 0 <= x < size and 0 <= y < size:
+                    setf(x, y, max(abs(dx), abs(dy)) not in (2, 4))
+    if ver > 1:
+        na = ver // 7 + 2
+        step = (ver * 8 + na * 3 + 5) // (na * 4 - 4) * 2
+        pos = list(reversed([(ver * 4 + 10) - i * step for i in range(na - 1)] + [6]))
+        for i in range(na):
+            for j in range(na):
+                if (i == 0 and j == 0) or (i == 0 and j == na - 1) or (i == na - 1 and j == 0):
+                    continue
+                for dy in range(-2, 3):
+                    for dx in range(-2, 3):
+                        setf(pos[i] + dx, pos[j] + dy, max(abs(dx), abs(dy)) != 1)
+    def fmt(mask):
+        d = (1 << 3) | mask          # nivel de corrección L = 01
+        r = d
+        for _ in range(10):
+            r = (r << 1) ^ ((r >> 9) * 0x537)
+        b = ((d << 10) | r) ^ 0x5412
+        bit = lambda i: (b >> i) & 1
+        for i in range(6): setf(8, i, bit(i))
+        setf(8, 7, bit(6)); setf(8, 8, bit(7)); setf(7, 8, bit(8))
+        for i in range(9, 15): setf(14 - i, 8, bit(i))
+        for i in range(8): setf(size - 1 - i, 8, bit(i))
+        for i in range(8, 15): setf(8, size - 15 + i, bit(i))
+        setf(8, size - 8, True)
+    fmt(0)
+    if ver >= 7:
+        r = ver
+        for _ in range(12):
+            r = (r << 1) ^ ((r >> 11) * 0x1F25)
+        b = (ver << 12) | r
+        for i in range(18):
+            a, c = size - 11 + i % 3, i // 3
+            setf(a, c, (b >> i) & 1); setf(c, a, (b >> i) & 1)
+    i = 0
+    for right in range(size - 1, 0, -2):
+        if right <= 6:
+            right -= 1
+        for vert in range(size):
+            for j in range(2):
+                x = right - j
+                y = size - 1 - vert if ((right + 1) & 2) == 0 else vert
+                if not fn[y][x] and i < len(cw) * 8:
+                    mod[y][x] = bool((cw[i >> 3] >> (7 - (i & 7))) & 1)
+                    i += 1
+    masks = (lambda x, y: (x + y) % 2 == 0, lambda x, y: y % 2 == 0, lambda x, y: x % 3 == 0,
+             lambda x, y: (x + y) % 3 == 0, lambda x, y: (x // 3 + y // 2) % 2 == 0,
+             lambda x, y: x * y % 2 + x * y % 3 == 0, lambda x, y: (x * y % 2 + x * y % 3) % 2 == 0,
+             lambda x, y: ((x + y) % 2 + x * y % 3) % 2 == 0)
+    def apply(m):
+        f = masks[m]
+        for y in range(size):
+            for x in range(size):
+                if not fn[y][x] and f(x, y):
+                    mod[y][x] = not mod[y][x]
+    _PA = (1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0)
+    _PB = (0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1)
+    def penalty():
+        p = 0
+        for g in (mod, [list(c) for c in zip(*mod)]):
+            for row in g:
+                run = 1
+                for k2 in range(1, size + 1):
+                    if k2 < size and row[k2] == row[k2 - 1]:
+                        run += 1
+                    else:
+                        if run >= 5:
+                            p += 3 + run - 5
+                        run = 1
+                bits_ = [1 if v else 0 for v in row]
+                for k2 in range(size - 10):
+                    w = tuple(bits_[k2:k2 + 11])
+                    if w == _PA or w == _PB:
+                        p += 40
+        for y in range(size - 1):
+            for x in range(size - 1):
+                if mod[y][x] == mod[y][x + 1] == mod[y + 1][x] == mod[y + 1][x + 1]:
+                    p += 3
+        dark = sum(map(sum, mod))
+        tot = size * size
+        p += ((abs(dark * 20 - tot * 10) + tot - 1) // tot - 1) * 10
+        return p
+    best, bestp = 0, None
+    for m in range(8):
+        apply(m); fmt(m)
+        pe = penalty()
+        if bestp is None or pe < bestp:
+            best, bestp = m, pe
+        apply(m)
+    apply(best); fmt(best)
+    return mod
+
+def _qr_svg(text, border=4):
+    m = _qr_matrix(text)
+    n = len(m)
+    d = []
+    for y, row in enumerate(m):
+        x = 0
+        while x < n:
+            if row[x]:
+                s = x
+                while x < n and row[x]:
+                    x += 1
+                d.append(f"M{s + border},{y + border}h{x - s}v1h-{x - s}z")
+            else:
+                x += 1
+    t = n + 2 * border
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {t} {t}" style="width:100%;max-width:320px;height:auto;display:block;margin:0 auto" '
+            f'shape-rendering="crispEdges"><rect width="{t}" height="{t}" fill="#fff"/><path d="{"".join(d)}" fill="#000"/></svg>')
+
+def qr_terminal(text, border=2):
+    m = _qr_matrix(text)
+    n = len(m)
+    def dark(x, y):
+        return 0 <= x < n and 0 <= y < n and m[y][x]
+    out = []
+    for y in range(-border, n + border, 2):
+        line = ""
+        for x in range(-border, n + border):
+            t, b = dark(x, y), dark(x, y + 1)
+            line += "█" if (t and b) else "▀" if t else "▄" if b else " "
+        out.append("\033[30;47m" + line + "\033[0m")      # negro sobre blanco: se lee en cualquier tema
+    return "\n".join(out)
 
 # ── comandos ────────────────────────────────────────────────
 def parse_days(v):
@@ -432,10 +638,10 @@ def cmd_add(proto, name, days):
             except Err: pass
             raise Err(f"No se pudo guardar el registro: {e}")
     path = "/vless" if proto == "vless" else "/vmess"
-    print(f"{Y}    CUENTA {proto.upper()} CREADA EXITOSAMENTE    {N}\n{LINE}")
-    print(f" Alias       : {C}{name}{N}\n Dominio     : {C}{dom}{N}\n UUID        : {C}{uid}{N}")
-    print(f" Puertos     : {C}443 (TLS) / 80 (NTLS){N}\n Ruta (Path) : {C}{path}{N}\n Expira      : {C}{exp}{N}\n{LINE}")
-    print(f"\n {G}LINK TLS (443) :{N}\n{tls}\n\n {G}LINK NTLS (80) :{N}\n{ntls}\n\n{LINE}")
+    print(f"{NB}╔{'═' * 46}╗{N}\n{NB}  {NY}CUENTA {proto.upper()} CREADA EXITOSAMENTE{N}\n{LINE}")
+    print(f"  {NG}Alias       :{N} {name}\n  {NG}Dominio     :{N} {dom}\n  {NG}UUID        :{N} {uid}")
+    print(f"  {NG}Puerto      :{N} 443 (TLS)\n  {NG}Ruta (Path) :{N} {path}\n  {NG}Expira      :{N} {exp}\n{LINE}")
+    print(f"\n  {NG}LINK TLS (443):{N}\n{tls}\n\n{LINE}")
 
 def cmd_del(proto, name):
     with lock():
@@ -504,7 +710,7 @@ def cmd_list(proto):
     if not items:
         print("  (no hay cuentas)"); return
     col = {"ACTIVA": G, "VENCIDA": R, "BLOQUEADA": Y, "SIN XRAY": Y}
-    print(f"  {'USUARIO':<20}{'VENCE':<13}ESTADO")
+    print(f"  {NG}{'USUARIO':<20}{'VENCE':<13}ESTADO{N}")
     for it in items:
         st = status(it); left = days_left(it)
         extra = f" ({left} d)" if st == "ACTIVA" and left is not None else ""
@@ -546,23 +752,40 @@ def cmd_restore():
         if xray_mutate(m):
             print(f"{G}[✔] Cuentas activas restauradas en Xray.{N}")
 
+def cmd_no80():
+    """Servidores ya instalados: retira de Xray el inbound público del puerto 80 (solo TLS en 443)."""
+    with lock():
+        def m(cfg):
+            ibs = cfg.get("inbounds", [])
+            keep = [ib for ib in ibs if not (isinstance(ib, dict) and str(ib.get("port")) == "80"
+                    and ib.get("listen") not in ("127.0.0.1", "::1", "localhost"))]
+            if len(keep) == len(ibs):
+                return False
+            cfg["inbounds"] = keep
+            return True
+        if xray_mutate(m):
+            print(f"{G}[✔] Puerto 80 (NTLS) retirado de Xray: ahora solo TLS en 443.{N}")
+
 def cmd_qr(proto, name, which):
     it = find(load_reg(), proto, name)
     if not it:
         raise Err(f"No existe la cuenta {proto.upper()} '{name}'.")
-    link = it.get("link_ntls" if which == "ntls" else "link")
+    if which == "ntls":
+        raise Err("El puerto 80 (NTLS) ya no está disponible: solo se usa TLS en el 443.")
+    link = it.get("link")
     if not link:
         raise Err("La cuenta no tiene ese enlace.")
-    if not shutil.which("qrencode"):
-        raise Err("Falta qrencode. Instálalo con: apt install -y qrencode")
-    subprocess.run(["qrencode", "-t", "ANSIUTF8", link])
+    try:
+        print(qr_terminal(link))
+    except ValueError:
+        raise Err("El enlace es demasiado largo para un QR.")
 
 USAGE = {"add": (3, cmd_add), "del": (2, cmd_del), "renew": (3, cmd_renew), "block": (2, cmd_block),
-         "list": (1, cmd_list), "purge": (0, cmd_purge), "restore": (0, cmd_restore), "qr": (3, cmd_qr)}
+         "list": (1, cmd_list), "purge": (0, cmd_purge), "restore": (0, cmd_restore), "no80": (0, cmd_no80), "qr": (3, cmd_qr)}
 
 def main(argv):
     if not argv or argv[0] not in USAGE:
-        print("uso: v2ray_ctl.py {add|del|renew|block|list|purge|restore|qr} ..."); return 2
+        print("uso: v2ray_ctl.py {add|del|renew|block|list|purge|restore|no80|qr} ..."); return 2
     n, fn = USAGE[argv[0]]
     args = argv[1:]
     if len(args) != n:
@@ -594,34 +817,36 @@ asegurar_cron() {
 }
 
 mostrar_cuentas() {
-    echo -e "${C_CYAN} Cuentas actuales:${C_NC}"
+    echo -e "  ${C_NEON_GREEN}Cuentas actuales:${C_RST}"
     ctl list "$PROTO"
-    echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+    echo -e "${C_NEON_BLUE}${LINEA}${C_RST}"
 }
 
 menu_vmess() {
-    if [ ! -f "$FLAG_FILE" ]; then instalar_xray_dual; fi
+    if [ ! -f "$FLAG_FILE" ]; then instalar_xray_dual; else ctl no80; fi
 
     while true; do
         ctl purge >/dev/null 2>&1
         clear
-        echo -e "${C_YELLOW}        GESTION DE VMESS (80 / 443)        ${C_NC}"
-        echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
-        echo -e "${C_CYAN}[1] >${C_NC} Crear Cuenta Vmess"
-        echo -e "${C_CYAN}[2] >${C_NC} Eliminar Cuenta Vmess"
-        echo -e "${C_CYAN}[3] >${C_NC} Renovar Días de Cuenta"
-        echo -e "${C_CYAN}[4] >${C_NC} Bloquear / Desbloquear Cuenta"
-        echo -e "${C_CYAN}[5] >${C_NC} Configurar Límite de Dispositivos"
-        echo -e "${C_CYAN}[6] >${C_NC} Reinstalar / Reparar Motor Xray"
-        echo -e "${C_CYAN}[x] >${C_NC} Salir del Gestor"
-        echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
-        read -p "Digite su opción: " opc
+        echo -e "${C_NEON_BLUE}╔${LINEA}╗${C_RST}"
+        echo -e "${C_NEON_BLUE}  ${C_NEON_YELLOW}GESTION DE VMESS (443 TLS)${C_RST}"
+        echo -e "${C_NEON_BLUE}╠${LINEA}╣${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}1.${C_RST} Crear Cuenta Vmess"
+        echo -e "  ${C_NEON_YELLOW}2.${C_RST} Eliminar Cuenta Vmess"
+        echo -e "  ${C_NEON_YELLOW}3.${C_RST} Renovar Días de Cuenta"
+        echo -e "  ${C_NEON_YELLOW}4.${C_RST} Bloquear / Desbloquear Cuenta"
+        echo -e "  ${C_NEON_YELLOW}5.${C_RST} Configurar Límite de Dispositivos"
+        echo -e "  ${C_NEON_YELLOW}6.${C_RST} Reinstalar / Reparar Motor Xray"
+        echo -e "${C_NEON_BLUE}╠${LINEA}╣${C_RST}"
+        echo -e "  ${C_RED}0.${C_RST} Salir del Gestor"
+        echo -e "${C_NEON_BLUE}╚${LINEA}╝${C_RST}"
+        echo -n -e "${C_YELLOW}Seleccione una opción:${C_RST} "
+        read opc
 
         case $opc in
             1)
                 clear
-                echo -e "${C_YELLOW}      CREAR USUARIO XRAY VMESS      ${C_NC}"
-                echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+                cabecera "CREAR USUARIO XRAY VMESS"
                 read -p "Nombre de usuario: " user
                 [ -z "$user" ] && continue
                 read -p "Duración (días): " dias
@@ -634,8 +859,7 @@ menu_vmess() {
                 ;;
             2)
                 clear
-                echo -e "${C_YELLOW}     ELIMINAR USUARIO XRAY VMESS     ${C_NC}"
-                echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+                cabecera "ELIMINAR USUARIO XRAY VMESS"
                 mostrar_cuentas
                 read -p "Usuario a eliminar: " user
                 [ -z "$user" ] && continue
@@ -644,8 +868,7 @@ menu_vmess() {
                 ;;
             3)
                 clear
-                echo -e "${C_YELLOW}      RENOVAR CUENTA XRAY VMESS      ${C_NC}"
-                echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+                cabecera "RENOVAR CUENTA XRAY VMESS"
                 mostrar_cuentas
                 read -p "Nombre del usuario a renovar: " user
                 read -p "Días a sumar: " dias_extras
@@ -655,8 +878,7 @@ menu_vmess() {
                 ;;
             4)
                 clear
-                echo -e "${C_YELLOW}     BLOQUEAR / DESBLOQUEAR USUARIO     ${C_NC}"
-                echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+                cabecera "BLOQUEAR / DESBLOQUEAR USUARIO"
                 mostrar_cuentas
                 read -p "Nombre del usuario: " user
                 [ -z "$user" ] && continue
@@ -665,25 +887,24 @@ menu_vmess() {
                 ;;
             5)
                 clear
-                echo -e "${C_YELLOW}      LÍMITE DE DISPOSITIVOS (IPs)      ${C_NC}"
-                echo -e "${C_YELLOW}───────────────────────────────────────────────${C_NC}"
+                cabecera "LÍMITE DE DISPOSITIVOS (IPs)"
                 read -p "Nombre del usuario: " user
                 read -p "Máximo de dispositivos permitidos: " max_disp
                 { [ -z "$user" ] || [ -z "$max_disp" ]; } && continue
                 if ! [[ "$user" =~ ^[A-Za-z0-9._-]{1,40}$ ]] || ! [[ "$max_disp" =~ ^[0-9]+$ ]]; then
-                    echo -e "${C_RED}[!] Datos inválidos.${C_NC}"; read -p "ENTER..." foo; continue
+                    echo -e "${C_RED}[!] Datos inválidos.${C_RST}"; read -p "ENTER..." foo; continue
                 fi
                 mkdir -p /etc/vps-manager
                 [ -f "$LIMIT_FILE" ] && sed -i "/^$user /d" "$LIMIT_FILE"
                 echo "$user $max_disp" >> "$LIMIT_FILE"
-                echo -e "${C_GREEN}[✔] Límite de $max_disp dispositivos registrado para $user.${C_NC}"
-                echo -e "${C_YELLOW}[i] Xray no aplica este límite por sí solo: solo queda anotado.${C_NC}"
+                echo -e "${C_GREEN}[✔] Límite de $max_disp dispositivos registrado para $user.${C_RST}"
+                echo -e "${C_YELLOW}[i] Xray no aplica este límite por sí solo: solo queda anotado.${C_RST}"
                 read -p "Presiona ENTER para continuar..." foo
                 ;;
             6)
                 instalar_xray_dual
                 ;;
-            x|X|"") break ;;
+            0|x|X|"") break ;;
         esac
     done
 }
