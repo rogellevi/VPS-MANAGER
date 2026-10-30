@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# VPS MANAGER  - Panel V2.0
+# VPS MANAGER  - V2.1
 # ==========================================
 C_RST='\033[0m'; C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;36m'
 C_NEON_BLUE='\033[38;5;39m'; C_NEON_GREEN='\033[38;5;46m'; C_NEON_PURPLE='\033[38;5;141m'; C_NEON_YELLOW='\033[38;5;226m'
@@ -262,6 +262,9 @@ H_OPT6="🛡️ Firewall Manager (Rules & Security)"
 H_OPT7="📱 Manage Online App"
 H_OPT8="🛡️ Advanced CheckUser Monitor"
 H_OPT9="🌍 Change Language (ES/EN)"
+H_OPT10="💾 Virtual Memory (Swap)"
+H_OPT11="🛡️ Fail2ban (Anti Brute-Force)"
+H_OPT12="🚫 Block Torrents"
 H_OPT0="🔙 Back to Main Menu"
 H_SEL="Select an option: "
 else
@@ -275,12 +278,15 @@ H_OPT6="🛡️ Gestor de Firewall (Reglas y Seguridad)"
 H_OPT7="📱 Activar Online App"
 H_OPT8="🛡️ CheckUser Avanzado "
 H_OPT9="🌍 Cambiar Idioma (ES/EN)"
+H_OPT10="💾 Memoria Virtual (Swap)"
+H_OPT11="🛡️ Fail2ban (Anti Fuerza Bruta)"
+H_OPT12="🚫 Bloqueo de Torrents"
 H_OPT0="🔙 Volver al Menú Principal"
 H_SEL="Seleccione una opción: "
 fi
-echo -e "${C_NEON_PURPLE}╔══════════════════════════════════════════════╗${C_RST}"
-echo -e "${C_NEON_PURPLE} ${C_NEON_GREEN}         ${H_TITLE}            ${C_NEON_PURPLE} ${C_RST}"
-echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         ${H_TITLE}            ${C_NEON_BLUE} ${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ${H_OPT1}"
 echo -e "  ${C_NEON_YELLOW}2.${C_RST} ${H_OPT2}"
 echo -e "  ${C_NEON_YELLOW}3.${C_RST} ${H_OPT3}"
@@ -290,9 +296,12 @@ echo -e "  ${C_NEON_YELLOW}6.${C_RST} ${H_OPT6}"
 echo -e "  ${C_NEON_YELLOW}7.${C_RST} ${H_OPT7} ${C_GREEN}${onlineapp_indicator}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}8.${C_RST} ${H_OPT8} ${C_GREEN}${checkuser_indicator}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}9.${C_RST} ${H_OPT9}"
-echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "  ${C_NEON_YELLOW}10.${C_RST}${H_OPT10}"
+echo -e "  ${C_NEON_YELLOW}11.${C_RST}${H_OPT11}"
+echo -e "  ${C_NEON_YELLOW}12.${C_RST}${H_OPT12}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_RED}0.${C_RST} ${H_OPT0}"
-echo -e "${C_NEON_PURPLE}╚══════════════════════════════════════════════╝${C_RST}"
+echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
 read -p "$H_SEL" hopt
 case $hopt in
 1) menu_revendedores ;;
@@ -304,6 +313,9 @@ case $hopt in
 7) menu_onlineapp ;;
 8) menu_checkuser ;;
 9) menu_idioma ;;
+10) menu_swap ;;
+11) menu_fail2ban ;;
+12) menu_torrents ;;
 0) break ;;
 *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
 esac
@@ -350,9 +362,9 @@ echo -e "${C_NEON_BLUE}╚══════════════════
 read -p "Seleccione una opción: " opt
 case $opt in
 1)
-clear; echo -e "${C_CYAN}================================================${C_RST}
+clear; echo -e "${C_NEON_BLUE}================================================${C_RST}
 ${C_YELLOW}      CREAR USUARIO SSH / HWID PROTECTION       ${C_RST}
-${C_CYAN}================================================${C_RST}"
+${C_NEON_BLUE}================================================${C_RST}"
 echo -e " [${C_GREEN}1${C_RST}] Usuario Normal"
 echo -e " [${C_GREEN}2${C_RST}] Usuario HWID"
 read -p "Opción: " tipo_creacion
@@ -408,15 +420,15 @@ ZIVPN_PASS="$pass"
 else
 ZIVPN_PASS="No instalado"
 fi
-clear; echo -e "${C_CYAN}================================================${C_RST}
+clear; echo -e "${C_NEON_BLUE}================================================${C_RST}
 ${C_GREEN}        ✅ CUENTA CREADA EXITOSAMENTE ✅        ${C_RST}
-${C_CYAN}================================================${C_RST}"
+${C_NEON_BLUE}================================================${C_RST}"
 echo -e " 👤 Usuario       : ${C_YELLOW}$user${C_RST}"
 echo -e " 🔑 Clave         : ${C_YELLOW}$pass${C_RST}"
 echo -e " 📅 Vence         : ${C_YELLOW}$EXP_DATE ($dias días)${C_RST}"
 echo -e " 🔒 Límite IPs    : ${C_YELLOW}$limite${C_RST}"
 echo -e " 🛡️ Protecc. HWID : ${C_YELLOW}$HWID_MSG${C_RST}"
-echo -e "${C_CYAN}------------------------------------------------${C_RST}"
+echo -e "${C_NEON_BLUE}------------------------------------------------${C_RST}"
 echo -e " 🌐 Host/IP       : ${C_YELLOW}$DOM${C_RST}"
 echo -e " 🌍 NS Domain     : ${C_YELLOW}$NS_DOM${C_RST}"
 echo -e " 🗝️ Pub Key (DNS) : ${C_YELLOW}$PUB_KEY${C_RST}"
@@ -427,13 +439,13 @@ echo -e "                     ${C_YELLOW}SSL Stunnel($PORT_SSL)${C_RST}"
 echo -e "                     ${C_YELLOW}BHTTP($PORT_BHTTP) HCR($PORT_HCR)${C_RST}"
 echo -e "                     ${C_YELLOW}UDP Custom(25000)${C_RST}"
 echo -e "                     ${C_YELLOW}Zivpn(6000-19999) DNSTT(53)${C_RST}"
-echo -e "${C_CYAN}================================================${C_RST}"; read -p "Copia los datos y presiona Enter..." ;;
+echo -e "${C_NEON_BLUE}================================================${C_RST}"; read -p "Copia los datos y presiona Enter..." ;;
 2) read -p "Usuario a eliminar: " user; userdel -f $user 2>/dev/null; rm -f /etc/vps-manager/banner_${user}.net /etc/vps-manager/limite_${user} /etc/vps-manager/hwid_${user}; sed -i "/Match User $user/,+1d" /etc/ssh/sshd_config; systemctl restart ssh 2>/dev/null; echo -e "${C_GREEN}[✔] Eliminado.${C_RST}"; sleep 2 ;;
 3) read -p "Usuario a renovar: " user; read -p "Nuevos días: " dias; EXP_DATE=$(date -d "+$dias days" +"%Y-%m-%d"); chage -E $EXP_DATE $user; limite=$(cat /etc/vps-manager/limite_${user} 2>/dev/null || echo "1"); generar_banner_usuario "$user" "$EXP_DATE" "$dias" "$limite"; systemctl restart ssh 2>/dev/null; echo -e "${C_GREEN}[✔] Renovado.${C_RST}"; sleep 2 ;;
-4) clear; echo -e "${C_CYAN}╔══════════════════════════════════════════════╗
- ${C_GREEN}       📋 LISTA DE USUARIOS Y VENCIMIENTO     ${C_CYAN} 
+4) clear; echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗
+ ${C_GREEN}       📋 LISTA DE USUARIOS Y VENCIMIENTO     ${C_NEON_BLUE} 
 ╚══════════════════════════════════════════════╝${C_RST}"; printf "${C_YELLOW}%-15s %-15s %-15s${C_RST}
-" "USUARIO" "EXPIRA" "DÍAS RESTANTES"; echo -e "${C_CYAN}────────────────────────────────────────────────${C_RST}"; for user in $(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd); do exp_date=$(chage -l $user | grep "Account expires" | awk -F": " '{print $2}'); if [[ "$exp_date" != "never" && -n "$exp_date" ]]; then exp_fmt=$(date -d "$exp_date" "+%Y-%m-%d" 2>/dev/null); sec_exp=$(date -d "$exp_date" +%s 2>/dev/null); sec_now=$(date +%s); dias=$(( (sec_exp - sec_now) / 86400 )); [ $dias -lt 0 ] && dias=0; printf "%-15s %-15s %-15s
+" "USUARIO" "EXPIRA" "DÍAS RESTANTES"; echo -e "${C_NEON_BLUE}────────────────────────────────────────────────${C_RST}"; for user in $(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd); do exp_date=$(chage -l $user | grep "Account expires" | awk -F": " '{print $2}'); if [[ "$exp_date" != "never" && -n "$exp_date" ]]; then exp_fmt=$(date -d "$exp_date" "+%Y-%m-%d" 2>/dev/null); sec_exp=$(date -d "$exp_date" +%s 2>/dev/null); sec_now=$(date +%s); dias=$(( (sec_exp - sec_now) / 86400 )); [ $dias -lt 0 ] && dias=0; printf "%-15s %-15s %-15s
 " "$user" "$exp_fmt" "$dias Días"; else printf "%-15s %-15s %-15s
 " "$user" "Ilimitado" "∞"; fi; done; read -p "Enter..." ;;
 5) clear; echo -e "${C_YELLOW}      VERIFICAR CONEXIONES EN VIVO      ${C_RST}"; ps -ef | grep -E "sshd|dropbear" | grep -v root | grep -v grep | awk '{print $1}' | sort | uniq -c | awk '{print " 👤 "$2" -> "$1" conexión(es)"}'; read -p "Enter..." ;;
@@ -551,14 +563,14 @@ EOF
 menu_bhttp() {
     while true; do
         clear
-        echo -e "${C_NEON_PURPLE}╔══════════════════════════════════════════════╗${C_RST}"
-        echo -e "${C_NEON_PURPLE} ${C_NEON_GREEN}         🌐 INSTALAR BHTTP PROXY              ${C_NEON_PURPLE} ${C_RST}"
-        echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+        echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🌐 INSTALAR BHTTP PROXY              ${C_NEON_BLUE} ${C_RST}"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
         echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar BHTTP  (v1.0)"
         echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🚀 Instalar BHTTP  (v2.0 Nuevo)"
-        echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
         echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Anterior"
-        echo -e "${C_NEON_PURPLE}╚══════════════════════════════════════════════╝${C_RST}"
+        echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
         read -p "Seleccione una opción: " bhttp_opt
         case $bhttp_opt in
             1)
@@ -571,9 +583,9 @@ menu_bhttp() {
                 ;;
             2)
                 clear
-                echo -e "${C_NEON_PURPLE}╔══════════════════════════════════════════════╗${C_RST}"
-                echo -e "${C_NEON_PURPLE} ${C_NEON_GREEN}      🌐 INSTALAR BHTTP (v2.0)   ${C_NEON_PURPLE} ${C_RST}"
-                echo -e "${C_NEON_PURPLE}╚══════════════════════════════════════════════╝${C_RST}"
+                echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+                echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}      🌐 INSTALAR BHTTP (v2.0)   ${C_NEON_BLUE} ${C_RST}"
+                echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
                 
                 echo -e "${C_YELLOW}[+] Descargando e instalando motor BHTTP v2.0...${C_RST}"
                 wget -qO /tmp/bhttpv2.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/master/core/bhttpv2.sh
@@ -654,6 +666,510 @@ EOF
             *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
         esac
     done
+}
+
+# ==========================================
+# SUBMENÚ: FAIL2BAN (PROTECCIÓN CONTRA FUERZA BRUTA)
+# ==========================================
+F2B_CONF="/etc/fail2ban/jail.d/vps-manager.local"
+
+# Puertos en los que escucha un proceso (sshd, dropbear) -> "22,2222"
+puertos_servicio() {
+    ss -lntp 2>/dev/null | grep "\"$1\"" | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un | paste -sd,
+}
+
+fail2ban_estado_texto() {
+    if ! command -v fail2ban-client >/dev/null 2>&1; then echo -e "⚪ No instalado"
+    elif systemctl is-active --quiet fail2ban 2>/dev/null; then echo -e "🟢 ACTIVO"
+    else echo -e "🔴 INACTIVO"; fi
+}
+
+fail2ban_instalar() {
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🛡️ INSTALAR / CONFIGURAR FAIL2BAN    ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+
+    if ! command -v fail2ban-client >/dev/null 2>&1; then
+        echo -e "${C_YELLOW}[+] Instalando Fail2ban...${C_RST}"
+        apt-get update -y >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban >/dev/null 2>&1
+        if ! command -v fail2ban-client >/dev/null 2>&1; then
+            echo -e "${C_RED}[!] No se pudo instalar Fail2ban.${C_RST}"
+            read -p "Presione Enter para continuar..."; return
+        fi
+    fi
+
+    local maxretry bantime
+    echo -ne "${C_NEON_YELLOW}Intentos fallidos antes de bloquear (1-20) [5]: ${C_RST}"
+    read maxretry; maxretry=${maxretry:-5}
+    if [[ ! "$maxretry" =~ ^[0-9]+$ ]] || [ "$maxretry" -lt 1 ] || [ "$maxretry" -gt 20 ]; then
+        echo -e "${C_RED}[!] Valor no válido.${C_RST}"; read -p "Presione Enter para continuar..."; return
+    fi
+    echo -ne "${C_NEON_YELLOW}Minutos de bloqueo (1-10080) [60]: ${C_RST}"
+    read bantime; bantime=${bantime:-60}
+    if [[ ! "$bantime" =~ ^[0-9]+$ ]] || [ "$bantime" -lt 1 ] || [ "$bantime" -gt 10080 ]; then
+        echo -e "${C_RED}[!] Valor no válido.${C_RST}"; read -p "Presione Enter para continuar..."; return
+    fi
+
+    # Nunca bloquear: loopback (los túneles SSHWS/HCR/SSL llegan al SSH desde 127.0.0.1) ni tu IP actual
+    local ignorar="127.0.0.1/8 ::1" mi_ip="${SSH_CLIENT%% *}"
+    [[ "$mi_ip" =~ ^[0-9a-fA-F:.]+$ ]] && ignorar="$ignorar $mi_ip"
+
+    local p_ssh p_db
+    p_ssh=$(puertos_servicio sshd); p_ssh=${p_ssh:-22}
+    p_db=$(puertos_servicio dropbear)
+
+    mkdir -p /etc/fail2ban/jail.d
+    cat > "$F2B_CONF" << EOF
+# Generado por VPS-Manager
+[DEFAULT]
+ignoreip = $ignorar
+bantime  = $((bantime * 60))
+findtime = 600
+maxretry = $maxretry
+
+[sshd]
+enabled = true
+port    = $p_ssh
+EOF
+    # Dropbear solo si existe el log de autenticación (si no, Fail2ban no arrancaría)
+    if [ -n "$p_db" ] && [ -f /var/log/auth.log ]; then
+        cat >> "$F2B_CONF" << EOF
+
+[dropbear]
+enabled = true
+port    = $p_db
+EOF
+    fi
+
+    echo -e "${C_YELLOW}[+] Aplicando configuración...${C_RST}"
+    systemctl enable fail2ban >/dev/null 2>&1
+    systemctl restart fail2ban >/dev/null 2>&1
+    sleep 2
+    if fail2ban-client status sshd >/dev/null 2>&1; then
+        echo -e "${C_NEON_BLUE}════════════════════════════════════════════════${C_RST}"
+        echo -e "  ${C_NEON_GREEN}Protege      :${C_RST} SSH (puerto $p_ssh)$([ -n "$p_db" ] && [ -f /var/log/auth.log ] && echo ", Dropbear ($p_db)")"
+        echo -e "  ${C_NEON_GREEN}Intentos     :${C_RST} $maxretry en 10 min"
+        echo -e "  ${C_NEON_GREEN}Bloqueo      :${C_RST} $bantime min"
+        echo -e "  ${C_NEON_GREEN}IPs ignoradas:${C_RST} $ignorar"
+        echo -e "${C_NEON_BLUE}════════════════════════════════════════════════${C_RST}"
+        echo -e "${C_GREEN}[✔] Fail2ban activo.${C_RST}"
+    else
+        echo -e "${C_RED}[!] Fail2ban no pudo iniciar. Últimas líneas del registro:${C_RST}"
+        journalctl -u fail2ban -n 15 --no-pager 2>/dev/null
+    fi
+    read -p "Presione Enter para continuar..."
+}
+
+fail2ban_ver() {
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🛡️ ESTADO E IPs BLOQUEADAS           ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+    if ! systemctl is-active --quiet fail2ban 2>/dev/null; then
+        echo -e "${C_YELLOW}[!] Fail2ban no está activo.${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+    local jails j out
+    jails=$(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr -d ' ' | tr ',' ' ')
+    for j in $jails; do
+        out=$(fail2ban-client status "$j" 2>/dev/null)
+        echo -e "  ${C_NEON_YELLOW}Jail: $j${C_RST}"
+        echo -e "  ${C_NEON_GREEN}Fallos actuales   :${C_RST} $(echo "$out" | awk -F: '/Currently failed/{gsub(/[ \t]/,"",$2); print $2}')"
+        echo -e "  ${C_NEON_GREEN}Bloqueadas ahora  :${C_RST} $(echo "$out" | awk -F: '/Currently banned/{gsub(/[ \t]/,"",$2); print $2}')"
+        echo -e "  ${C_NEON_GREEN}Total bloqueadas  :${C_RST} $(echo "$out" | awk -F: '/Total banned/{gsub(/[ \t]/,"",$2); print $2}')"
+        echo -e "  ${C_NEON_GREEN}IPs bloqueadas    :${C_RST} $(echo "$out" | awk -F: '/Banned IP list/{print $2}' | sed 's/^[[:space:]]*//')"
+        echo -e "${C_NEON_BLUE}────────────────────────────────────────────────${C_RST}"
+    done
+    read -p "Presione Enter para continuar..."
+}
+
+fail2ban_desbloquear() {
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🔓 DESBLOQUEAR IP                    ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+    if ! systemctl is-active --quiet fail2ban 2>/dev/null; then
+        echo -e "${C_YELLOW}[!] Fail2ban no está activo.${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+    local ip res
+    echo -ne "${C_NEON_YELLOW}IP a desbloquear (o escriba 'todas'): ${C_RST}"
+    read ip
+    if [ "$ip" = "todas" ]; then
+        fail2ban-client unban --all >/dev/null 2>&1 && echo -e "${C_GREEN}[✔] Todas las IPs fueron desbloqueadas.${C_RST}" \
+            || echo -e "${C_RED}[!] No se pudo completar la operación.${C_RST}"
+    elif [[ "$ip" =~ ^[0-9a-fA-F:.]+$ ]]; then
+        res=$(fail2ban-client unban "$ip" 2>/dev/null | tail -1)
+        if [ -n "$res" ] && [ "$res" != "0" ]; then echo -e "${C_GREEN}[✔] IP $ip desbloqueada.${C_RST}"
+        else echo -e "${C_YELLOW}[!] La IP $ip no estaba bloqueada.${C_RST}"; fi
+    else
+        echo -e "${C_RED}[!] IP no válida.${C_RST}"
+    fi
+    read -p "Presione Enter para continuar..."
+}
+
+fail2ban_desinstalar() {
+    clear
+    if ! command -v fail2ban-client >/dev/null 2>&1; then
+        echo -e "${C_YELLOW}[!] Fail2ban no está instalado.${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+    read -p "¿Desinstalar Fail2ban? (s/n): " conf
+    if [[ "$conf" != "s" && "$conf" != "S" ]]; then return; fi
+    echo -e "${C_YELLOW}[+] Desinstalando Fail2ban...${C_RST}"
+    systemctl disable --now fail2ban >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y fail2ban >/dev/null 2>&1
+    rm -f "$F2B_CONF"
+    echo -e "${C_GREEN}[✔] Fail2ban desinstalado.${C_RST}"
+    read -p "Presione Enter para continuar..."
+}
+
+menu_fail2ban() {
+    while true; do
+        clear
+        echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+        echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🛡️ FAIL2BAN (ANTI FUERZA BRUTA)      ${C_NEON_BLUE} ${C_RST}"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_NEON_GREEN}Estado:${C_RST} $(fail2ban_estado_texto)"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🛡️ Instalar / Configurar Fail2ban"
+        echo -e "  ${C_NEON_YELLOW}2.${C_RST} 📋 Ver estado e IPs bloqueadas"
+        echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🔓 Desbloquear una IP"
+        echo -e "  ${C_NEON_YELLOW}4.${C_RST} 🗑️ Desinstalar Fail2ban"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Anterior"
+        echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+        read -p "Seleccione una opción: " f2b_opt
+        case $f2b_opt in
+            1) fail2ban_instalar ;;
+            2) fail2ban_ver ;;
+            3) fail2ban_desbloquear ;;
+            4) fail2ban_desinstalar ;;
+            0) break ;;
+            *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
+        esac
+    done
+}
+
+# ==========================================
+# SUBMENÚ: BLOQUEO DE TORRENTS (iptables)
+# ==========================================
+TORRENT_BIN="/usr/local/bin/vps-torrent-block"
+TORRENT_SVC="/etc/systemd/system/vps-torrent-block.service"
+
+torrent_activo() { command -v iptables >/dev/null 2>&1 && iptables -C OUTPUT -j VPS_BLOCK_TORRENT 2>/dev/null; }
+
+torrent_activar() {
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚫 ACTIVAR BLOQUEO DE TORRENTS       ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+    if ! command -v iptables >/dev/null 2>&1; then
+        echo -e "${C_YELLOW}[+] Instalando iptables...${C_RST}"
+        apt-get update -y >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y iptables >/dev/null 2>&1
+        if ! command -v iptables >/dev/null 2>&1; then
+            echo -e "${C_RED}[!] No se pudo instalar iptables.${C_RST}"
+            read -p "Presione Enter para continuar..."; return
+        fi
+    fi
+
+    # Script que aplica/quita las reglas (lo usa también el servicio al arrancar el VPS)
+    cat > "$TORRENT_BIN" << 'EOF'
+#!/bin/bash
+# VPS-Manager: bloqueo de torrents por inspección de contenido (iptables -m string)
+CHAIN=VPS_BLOCK_TORRENT
+STRINGS=("BitTorrent protocol" "peer_id=" ".torrent" "announce.php?passkey=" "info_hash" "get_peers" "announce_peer" "find_node" "BT-SEARCH")
+
+quitar() {
+    local IPT="$1" h
+    command -v "$IPT" >/dev/null 2>&1 || return 0
+    for h in OUTPUT FORWARD; do
+        while "$IPT" -C "$h" -j "$CHAIN" 2>/dev/null; do "$IPT" -D "$h" -j "$CHAIN"; done
+    done
+    "$IPT" -F "$CHAIN" 2>/dev/null
+    "$IPT" -X "$CHAIN" 2>/dev/null
+    return 0
+}
+
+aplicar() {
+    local IPT="$1" s h
+    command -v "$IPT" >/dev/null 2>&1 || return 0
+    "$IPT" -N "$CHAIN" 2>/dev/null
+    "$IPT" -F "$CHAIN" || return 1
+    "$IPT" -A "$CHAIN" -o lo -j RETURN || return 1          # el tráfico local no se inspecciona
+    for s in "${STRINGS[@]}"; do
+        "$IPT" -A "$CHAIN" -m string --algo bm --string "$s" -j DROP || return 1
+    done
+    for h in OUTPUT FORWARD; do
+        "$IPT" -C "$h" -j "$CHAIN" 2>/dev/null || "$IPT" -I "$h" 1 -j "$CHAIN" || return 1
+    done
+}
+
+case "$1" in
+    on)  modprobe xt_string 2>/dev/null
+         aplicar iptables || { quitar iptables; exit 1; }
+         aplicar ip6tables || quitar ip6tables ;;      # IPv6 es opcional
+    off) quitar iptables; quitar ip6tables ;;
+    *)   echo "Uso: $0 {on|off}"; exit 1 ;;
+esac
+EOF
+    chmod 755 "$TORRENT_BIN"
+
+    cat > "$TORRENT_SVC" << EOF
+[Unit]
+Description=VPS-Manager bloqueo de torrents
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=$TORRENT_BIN on
+ExecStop=$TORRENT_BIN off
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload >/dev/null 2>&1
+    echo -e "${C_YELLOW}[+] Aplicando reglas...${C_RST}"
+    systemctl enable vps-torrent-block.service >/dev/null 2>&1
+    systemctl restart vps-torrent-block.service >/dev/null 2>&1
+
+    if torrent_activo; then
+        echo -e "${C_GREEN}[✔] Bloqueo de torrents activado (se mantiene tras reiniciar).${C_RST}"
+    else
+        echo -e "${C_RED}[!] No se pudieron aplicar las reglas.${C_RST}"
+        echo -e "    Este VPS probablemente no soporta el módulo ${C_NEON_YELLOW}string${C_RST} de iptables"
+        echo -e "    (es común en virtualización OpenVZ/LXC)."
+        systemctl disable --now vps-torrent-block.service >/dev/null 2>&1
+        "$TORRENT_BIN" off 2>/dev/null
+        rm -f "$TORRENT_SVC" "$TORRENT_BIN"; systemctl daemon-reload >/dev/null 2>&1
+    fi
+    read -p "Presione Enter para continuar..."
+}
+
+torrent_desactivar() {
+    clear
+    if ! torrent_activo && [ ! -f "$TORRENT_SVC" ]; then
+        echo -e "${C_YELLOW}[!] El bloqueo de torrents no está activo.${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+    echo -e "${C_YELLOW}[+] Desactivando bloqueo de torrents...${C_RST}"
+    systemctl disable --now vps-torrent-block.service >/dev/null 2>&1
+    [ -x "$TORRENT_BIN" ] && "$TORRENT_BIN" off
+    rm -f "$TORRENT_SVC" "$TORRENT_BIN"
+    systemctl daemon-reload >/dev/null 2>&1
+    echo -e "${C_GREEN}[✔] Bloqueo de torrents desactivado.${C_RST}"
+    read -p "Presione Enter para continuar..."
+}
+
+menu_torrents() {
+    while true; do
+        clear
+        local estado="🔴 DESACTIVADO" bloq=""
+        if torrent_activo; then
+            estado="🟢 ACTIVO"
+            bloq=$(iptables -nvxL VPS_BLOCK_TORRENT 2>/dev/null | awk '$3=="DROP"{s+=$1} END{print s+0}')
+        fi
+        echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+        echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚫 BLOQUEO DE TORRENTS               ${C_NEON_BLUE} ${C_RST}"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_NEON_GREEN}Estado             :${C_RST} $estado"
+        [ -n "$bloq" ] && echo -e "  ${C_NEON_GREEN}Paquetes bloqueados:${C_RST} $bloq"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚫 Activar bloqueo de torrents"
+        echo -e "  ${C_NEON_YELLOW}2.${C_RST} ✅ Desactivar bloqueo de torrents"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Anterior"
+        echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+        read -p "Seleccione una opción: " tor_opt
+        case $tor_opt in
+            1) torrent_activar ;;
+            2) torrent_desactivar ;;
+            0) break ;;
+            *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
+        esac
+    done
+}
+
+# ==========================================
+# SUBMENÚ: HCR (v1.0 Y v2.0)
+# ==========================================
+menu_hcr() {
+    while true; do
+        clear
+        local hcr2_ind=" 🔴 "
+        systemctl is-active --quiet hcr-server.service 2>/dev/null && hcr2_ind=" 🟢 "
+        echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+        echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚀 INSTALAR HCR                ${C_NEON_BLUE} ${C_RST}"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🚀 Instalar HCR  (v1.0)"
+        echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🚀 Instalar HCR  (v2.0 ) ${C_GREEN}${hcr2_ind}${C_RST}"
+        echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🗑️ Desinstalar HCR v2.0"
+        echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
+        echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Anterior"
+        echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+        read -p "Seleccione una opción: " hcr_opt
+        case $hcr_opt in
+            1) clear; wget -qO /tmp/hcr.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/hcr.sh && chmod +x /tmp/hcr.sh && bash /tmp/hcr.sh ;;
+            2) hcr2_instalar ;;
+            3) hcr2_desinstalar ;;
+            0) break ;;
+            *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; sleep 1 ;;
+        esac
+    done
+}
+
+# Carpeta de HCR v2 (install.sh + hcr-server). Debe ser de root y sin espacios.
+HCR2_DIR="/etc/vps-manager/hcr-v2"
+HCR2_URL="https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/hcr-server-v2"
+
+hcr2_instalar() {
+    local DIR="$HCR2_DIR" BASE="$HCR2_URL"
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🚀 INSTALAR HCR (v2.0)        ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+
+    # 1) Arquitectura del servidor
+    local arq
+    case "$(uname -m)" in
+        x86_64|amd64)        arq="amd64" ;;
+        i386|i486|i586|i686) arq="386" ;;
+        armv7*)              arq="arm" ;;
+        aarch64|arm64)       arq="arm64" ;;
+        *) echo -e "${C_RED}[!] Arquitectura no soportada: $(uname -m)${C_RST}"; read -p "Presione Enter para continuar..."; return ;;
+    esac
+
+    # 2) Descarga (a archivos temporales: no se pisa el binario si el servicio está corriendo)
+    echo -e "${C_YELLOW}[+] Descargando HCR v2.0 ($arq)...${C_RST}"
+    mkdir -p "$DIR"; chown root:root "$DIR"; chmod 755 "$DIR"
+    local tmp_sh tmp_bin ok=0
+    tmp_sh=$(mktemp "$DIR/.install.XXXXXX"); tmp_bin=$(mktemp "$DIR/.bin.XXXXXX")
+
+    if ! wget -q -O "$tmp_sh" "$BASE/install.sh" || ! grep -q "HCR Server" "$tmp_sh"; then
+        echo -e "${C_RED}[!] No se pudo descargar install.sh desde:${C_RST}\n    $BASE/install.sh"
+        rm -f "$tmp_sh" "$tmp_bin"; read -p "Presione Enter para continuar..."; return
+    fi
+    if wget -q -O "$tmp_bin" "$BASE/hcr-server-v2" && [ "$(head -c4 "$tmp_bin" 2>/dev/null | tail -c3)" = "ELF" ]; then ok=1; fi
+    if [ "$ok" -ne 1 ]; then
+        echo -e "${C_RED}[!] No se pudo descargar el binario desde:${C_RST}\n    $BASE/hcr-server-v2"
+        rm -f "$tmp_sh" "$tmp_bin"; read -p "Presione Enter para continuar..."; return
+    fi
+    chmod 755 "$tmp_bin"
+    if ! "$tmp_bin" -version >/dev/null 2>&1; then
+        echo -e "${C_RED}[!] El binario descargado no se puede ejecutar en esta arquitectura ($(uname -m)).${C_RST}"
+        rm -f "$tmp_sh" "$tmp_bin"; read -p "Presione Enter para continuar..."; return
+    fi
+    mv -f "$tmp_sh" "$DIR/install.sh"; mv -f "$tmp_bin" "$DIR/hcr-server"
+    chown -R root:root "$DIR"; chmod 755 "$DIR" "$DIR/install.sh" "$DIR/hcr-server"
+    echo -e "${C_GREEN}[✔] Descargado: $("$DIR/hcr-server" -version 2>&1 | head -1)${C_RST}"
+    echo ""
+
+    # 3) Puerto
+    local port
+    echo -ne "${C_NEON_YELLOW}Ingrese el puerto para HCR v2.0 (1-65535) [8880]: ${C_RST}"
+    read port; port=${port:-8880}
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        echo -e "${C_RED}[!] Puerto no válido.${C_RST}"; read -p "Presione Enter para continuar..."; return
+    fi
+    # Ocupado por otro servicio (si es el propio hcr-server, se permite reconfigurar)
+    if ss -lntp 2>/dev/null | grep ":$port " | grep -qv "hcr-server"; then
+        local svc; svc=$(ss -lntp 2>/dev/null | grep ":$port " | grep -v "hcr-server" | head -1 | grep -o '"[^"]*"' | head -1 | tr -d '"')
+        echo -e "${C_RED}[!] El puerto $port ya está en uso por: ${svc:-otro servicio}${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+
+    # 4) Transporte
+    local transport
+    echo -e "${C_NEON_YELLOW}Seleccione el transporte:${C_RST}"
+    echo -e "  ${C_NEON_YELLOW}1.${C_RST} auto  (TLS y sin TLS en el mismo puerto) ${C_GREEN}[recomendado]${C_RST}"
+    echo -e "  ${C_NEON_YELLOW}2.${C_RST} tls   (solo TLS)"
+    echo -e "  ${C_NEON_YELLOW}3.${C_RST} plain (sin TLS)"
+    read -p "Opción [1]: " t_opt
+    case "${t_opt:-1}" in
+        1) transport="auto" ;;
+        2) transport="tls" ;;
+        3) transport="plain" ;;
+        *) echo -e "${C_RED}[!] Opción inválida.${C_RST}"; read -p "Presione Enter para continuar..."; return ;;
+    esac
+
+    # 5) Certificados (solo auto/tls): se enlazan al certificado Let's Encrypt del dominio configurado
+    if [ "$transport" != "plain" ]; then
+        local dom le
+        dom=$(cat /etc/vps-manager/dominio 2>/dev/null)
+        le="/etc/letsencrypt/live/$dom"
+        if [ -n "$dom" ] && [ -f "$le/fullchain.pem" ] && [ -f "$le/privkey.pem" ]; then
+            [ -e "$DIR/fullchain.pem" ] && [ ! -L "$DIR/fullchain.pem" ] || ln -sfn "$le/fullchain.pem" "$DIR/fullchain.pem"
+            [ -e "$DIR/privkey.pem" ]   && [ ! -L "$DIR/privkey.pem" ]   || ln -sfn "$le/privkey.pem"   "$DIR/privkey.pem"
+            echo -e "${C_GREEN}[✔] Certificado TLS de $dom enlazado.${C_RST}"
+        elif [ -f "$DIR/fullchain.pem" ] && [ -f "$DIR/privkey.pem" ]; then
+            echo -e "${C_GREEN}[✔] Se usarán los certificados que ya hay en $DIR.${C_RST}"
+        else
+            echo -e "${C_RED}[!] No hay certificado TLS disponible.${C_RST} Configura tu dominio en"
+            echo -e "    ${C_NEON_YELLOW}Herramientas y Sistema > Gestor de Dominio y Certificados SSL${C_RST}."
+            read -p "¿Instalar en modo plain (sin TLS)? (s/n): " r_plain
+            if [[ "$r_plain" == "s" || "$r_plain" == "S" ]]; then transport="plain"; else return; fi
+        fi
+    fi
+
+    # 6) Destino SSH
+    local target
+    echo -ne "${C_NEON_YELLOW}Destino SSH (HOST:PUERTO) [127.0.0.1:22]: ${C_RST}"
+    read target; target=${target:-127.0.0.1:22}
+    if [[ ! "$target" =~ ^[A-Za-z0-9._-]+:[0-9]{1,5}$ ]] || [ "${target##*:}" -lt 1 ] || [ "${target##*:}" -gt 65535 ]; then
+        echo -e "${C_RED}[!] Destino no válido. Formato: HOST:PUERTO${C_RST}"; read -p "Presione Enter para continuar..."; return
+    fi
+
+    # 7) Instalar el servicio con el install.sh oficial
+    echo ""
+    echo -e "${C_YELLOW}[+] Instalando servicio HCR v2.0 en el puerto $port ($transport)...${C_RST}"
+    if bash "$DIR/install.sh" --port "$port" --transport "$transport" --target "$target"; then
+        echo "$port" > /etc/vps-manager/hcr_port
+        if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "active"; then
+            ufw allow "$port/tcp" >/dev/null 2>&1
+        fi
+        echo -e "${C_NEON_BLUE}════════════════════════════════════════════════${C_RST}"
+        echo -e "  ${C_NEON_GREEN}Puerto     :${C_RST} $port"
+        echo -e "  ${C_NEON_GREEN}Transporte :${C_RST} $transport"
+        echo -e "  ${C_NEON_GREEN}Destino    :${C_RST} $target"
+        echo -e "${C_NEON_BLUE}════════════════════════════════════════════════${C_RST}"
+        echo -e "${C_GREEN}[✔] HCR v2.0 instalado y activo en el puerto $port.${C_RST}"
+    else
+        echo -e "${C_RED}[!] La instalación falló. Últimas líneas del registro:${C_RST}"
+        journalctl -u hcr-server -n 15 --no-pager 2>/dev/null
+    fi
+    read -p "Presione Enter para continuar..."
+}
+
+hcr2_desinstalar() {
+    local DIR="$HCR2_DIR"
+    clear
+    echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}         🗑️ DESINSTALAR HCR (v2.0)      ${C_NEON_BLUE} ${C_RST}"
+    echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
+    if [ ! -f "$DIR/hcr-server" ] && [ ! -e /etc/systemd/system/hcr-server.service ]; then
+        echo -e "${C_YELLOW}[!] HCR v2.0 no está instalado.${C_RST}"
+        read -p "Presione Enter para continuar..."; return
+    fi
+    read -p "¿Desinstalar HCR v2.0 y borrar sus archivos? (s/n): " conf
+    if [[ "$conf" != "s" && "$conf" != "S" ]]; then return; fi
+    echo -e "${C_YELLOW}[+] Desinstalando HCR v2.0...${C_RST}"
+    if [ -x "$DIR/install.sh" ]; then
+        bash "$DIR/install.sh" --uninstall >/dev/null 2>&1
+    fi
+    # Respaldo por si install.sh no estaba: quitar el servicio a mano
+    systemctl disable --now hcr-server.service >/dev/null 2>&1
+    rm -f /etc/systemd/system/hcr-server.service
+    systemctl daemon-reload >/dev/null 2>&1
+    # Borrar solo lo que instaló el menú (los certificados enlazados son solo enlaces, no se toca Let's Encrypt)
+    rm -f "$DIR/install.sh" "$DIR/hcr-server" "$DIR/hcr-server.service"
+    find "$DIR" -maxdepth 1 -type l -delete 2>/dev/null
+    rmdir "$DIR" 2>/dev/null
+    echo -e "${C_GREEN}[✔] HCR v2.0 desinstalado.${C_RST}"
+    read -p "Presione Enter para continuar..."
 }
 
 menu_wsproxy() {
@@ -1114,14 +1630,14 @@ done
 menu_instaladores() {
 while true; do
 clear
-echo -e "${C_NEON_PURPLE}╔══════════════════════════════════════════════╗${C_RST}"
-echo -e "${C_NEON_PURPLE} ${C_NEON_GREEN}    🛠️ GESTOR DE INSTALACIONES Y PROTOCOLOS   ${C_NEON_PURPLE} ${C_RST}"
-echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗${C_RST}"
+echo -e "${C_NEON_BLUE} ${C_NEON_GREEN}    🛠️ GESTOR DE INSTALACIONES Y PROTOCOLOS   ${C_NEON_BLUE} ${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} 🛡️ Menú Xray (VMess)"
 echo -e "  ${C_NEON_YELLOW}2.${C_RST} 🛡️ Menú Xray (VLESS)"
 echo -e "  ${C_NEON_YELLOW}3.${C_RST} 🛡️ Menú Xray (Trojan)"
 echo -e "  ${C_NEON_YELLOW}4.${C_RST} 🌐 Instalar OpenVPN (Web Perfiles)"
-echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🚀 Instalar HCR Nativo (Puerto Dinámico)"
+echo -e "  ${C_NEON_YELLOW}5.${C_RST} 🚀 Instalar HCR (v1.0 / v2.0)"
 echo -e "  ${C_NEON_YELLOW}6.${C_RST} 🎮 Instalar UDP Custom (Puerto 25000)"
 echo -e "  ${C_NEON_YELLOW}7.${C_RST} 🛸 Instalar SlowDNS (DNSTT)"
 echo -e "  ${C_NEON_YELLOW}8.${C_RST} 🌐 Instalar BHTTP (v1.0 / v2.0)"
@@ -1131,19 +1647,19 @@ echo -e "  ${C_NEON_YELLOW}11.${C_RST}🐘 Instalador PHP 8.5.12"
 echo -e "  ${C_NEON_YELLOW}12.${C_RST}🚀 Instalar Acelerador BBR"
 echo -e "  ${C_NEON_YELLOW}13.${C_RST}🛡️ Instalar Zivpn UDP (App Zivpn)"
 echo -e "  ${C_NEON_YELLOW}14.${C_RST}⚡ Instalar Hysteria v1 (QUIC Proxy)"
-echo -e "  ${C_NEON_YELLOW}15.${C_RST}🔒 Instalar SSL / TLS (Puerto Dinámico)"
+echo -e "  ${C_NEON_YELLOW}15.${C_RST}🔒 Instalar SSL / TLS (STUNNEL4)"
 echo -e "  ${C_NEON_YELLOW}16.${C_RST}🐻 Instalar Dropbear (Ubuntu 20)"
 echo -e "  ${C_NEON_YELLOW}17.${C_RST}🌐 Instalar WSProxy (WebSocket Proxy)"
-echo -e "${C_NEON_PURPLE}╠══════════════════════════════════════════════╣${C_RST}"
+echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_RED}0.${C_RST} 🔙 Volver al Menú Principal"
-echo -e "${C_NEON_PURPLE}╚══════════════════════════════════════════════╝${C_RST}"
+echo -e "${C_NEON_BLUE}╚══════════════════════════════════════════════╝${C_RST}"
 read -p "Seleccione una opción: " hopt
 case $hopt in
 1) clear; wget -qO /tmp/vmess.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/vmess.sh && chmod +x /tmp/vmess.sh && bash /tmp/vmess.sh ;;
 2) clear; wget -qO /tmp/vless.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/vless.sh && chmod +x /tmp/vless.sh && bash /tmp/vless.sh ;;
 3) clear; wget -qO /tmp/trojan.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/trojan.sh && chmod +x /tmp/trojan.sh && bash /tmp/trojan.sh ;;
 4) clear; wget -qO /tmp/setup_openvpn.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/setup_openvpn.sh && chmod +x /tmp/setup_openvpn.sh && bash /tmp/setup_openvpn.sh; read -p "Enter..." ;;
-5) clear; wget -qO /tmp/hcr.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/hcr.sh && chmod +x /tmp/hcr.sh && bash /tmp/hcr.sh ;;
+5) menu_hcr ;;
 6) clear; wget -qO /tmp/udp_custom.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/udp_custom.sh && chmod +x /tmp/udp_custom.sh && bash /tmp/udp_custom.sh ;;
 7) clear; wget -qO /tmp/Slowdns.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/Slowdns.sh && chmod +x /tmp/Slowdns.sh && bash /tmp/Slowdns.sh ;;
 8) menu_bhttp ;;
@@ -1367,28 +1883,28 @@ PORT_HCR=$(cat /etc/vps-manager/hcr_port 2>/dev/null || echo "8880")
 PORT_SSL=$(cat /etc/vps-manager/ssl_port 2>/dev/null || echo "444")
 
 puertos=(22 80 443 53 1194 2081 2083 $PORT_BHTTP $PORT_HCR $PORT_SSL 8181 7100 7200 7300 25000 5432 8888)
-nombres=("SSH (OpenSSH)" "HTTP / Xray WS" "Xray SSL/VLESS" "DNS (SlowDNS)" "OpenVPN TCP" "OpenVPN Web" "Trojan TLS" "BHTTP Custom" "HCR Proxy PRO" "SSL / TLS Proxy" "Web Panel UI" "BadVPN (Game 7100)" "BadVPN (Game 7200)" "BadVPN (Game 7300)" "UDP Custom" "CheckUser API" "Online App")
+nombres=("SSH (OpenSSH)" "HTTP / SSHWS" "Xray SSL/VLESS" "DNS (SlowDNS)" "OpenVPN TCP" "OpenVPN Web" "Trojan TLS" "BHTTP Custom" "HCR Proxy PRO" "SSL / TLS Proxy" "Web Panel UI" "BadVPN (Game 7100)" "BadVPN (Game 7200)" "BadVPN (Game 7300)" "UDP Custom" "CheckUser API" "Online App")
 
-PORT_CHECK_STD=""
-PORT_CHECK_4G=""
-# Preferir archivos de configuración systemd
-[ -f /etc/vps-manager/checkuser_port ] && PORT_CHECK_STD=$(cat /etc/vps-manager/checkuser_port)
-[ -f /etc/vps-manager/checkuser4g_port ] && PORT_CHECK_4G=$(cat /etc/vps-manager/checkuser4g_port)
-# Fallback a autostart antiguo
-if [ -z "$PORT_CHECK_STD" ] && [ -f /etc/autostart ]; then
-    PORT_CHECK_STD=$(grep -oE "check\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)
-fi
-if [ -z "$PORT_CHECK_4G" ] && [ -f /etc/autostart ]; then
-    PORT_CHECK_4G=$(grep -oE "4gcheck\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)
-fi
+# --- CheckUser avanzado: se detecta por el proceso que realmente escucha (no depende de archivos) ---
+declare -A _vistos
+for _p in "${puertos[@]}"; do _vistos[$_p]=1; done
+chk_add_puerto() { [ -z "$1" ] && return; [ -n "${_vistos[$1]}" ] && return; _vistos[$1]=1; puertos+=("$1"); nombres+=("$2"); }
 
-if [ -n "$PORT_CHECK_STD" ]; then
-    puertos+=($PORT_CHECK_STD)
-    nombres+=("CheckUser Estándar")
-fi
-if [ -n "$PORT_CHECK_4G" ]; then
-    puertos+=($PORT_CHECK_4G)
-    nombres+=("CheckUser Conecta4G")
+# 1) Puertos de procesos check.py / 4gcheck.py en escucha
+while read -r _lport _pid; do
+    _cmd=$(tr '\0' ' ' < "/proc/$_pid/cmdline" 2>/dev/null)
+    case "$_cmd" in
+        *4gcheck.py*) chk_add_puerto "$_lport" "CheckUser Conecta4G" ;;
+        *check.py*)   chk_add_puerto "$_lport" "CheckUser Estándar" ;;
+    esac
+done < <(ss -lntp 2>/dev/null | sed -nE 's/^[^ ]+ +[^ ]+ +[^ ]+ +[^ ]*:([0-9]+) +[^ ]+ +.*pid=([0-9]+).*/\1 \2/p')
+
+# 2) Respaldo: puertos guardados (se muestran como INACTIVO si el servicio está detenido)
+[ -f /etc/vps-manager/checkuser_port ]   && chk_add_puerto "$(cat /etc/vps-manager/checkuser_port)"   "CheckUser Estándar"
+[ -f /etc/vps-manager/checkuser4g_port ] && chk_add_puerto "$(cat /etc/vps-manager/checkuser4g_port)" "CheckUser Conecta4G"
+if [ -f /etc/autostart ]; then
+    chk_add_puerto "$(grep -oE "check\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)"   "CheckUser Estándar"
+    chk_add_puerto "$(grep -oE "4gcheck\.py [0-9]+" /etc/autostart 2>/dev/null | awk '{print $2}' | head -1)" "CheckUser Conecta4G"
 fi
 
 echo ""
@@ -1422,6 +1938,7 @@ menu_bot() { clear; echo -e "${C_YELLOW}[+] Configurando Bot...${C_RST}"; wget -
 menu_dominio() { clear; echo -e "${C_YELLOW}[+] Iniciando Gestor SSL...${C_RST}"; wget -qO /tmp/domain.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/domain.sh && chmod +x /tmp/domain.sh && bash /tmp/domain.sh; }
 menu_update() { clear; echo -e "${C_YELLOW}[+] Actualizando Panel...${C_RST}"; wget -qO /tmp/update.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/update.sh && chmod +x /tmp/update.sh && bash /tmp/update.sh; }
 menu_firewall() { clear; echo -e "${C_YELLOW}[+] Iniciando Firewall...${C_RST}"; wget -qO /tmp/firewall.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/firewall.sh && chmod +x /tmp/firewall.sh && bash /tmp/firewall.sh; }
+menu_swap() { clear; echo -e "${C_YELLOW}[+] Descargando Gestor de Memoria Virtual...${C_RST}"; if wget -qO /tmp/swapmemory.sh https://raw.githubusercontent.com/rogellevi/VPS-MANAGER/main/core/swapmemory.sh && [ -s /tmp/swapmemory.sh ]; then bash /tmp/swapmemory.sh; else echo -e "${C_RED}[!] No se pudo descargar swapmemory.sh. Revisa tu conexión o la ruta en GitHub.${C_RST}"; sleep 3; fi; rm -f /tmp/swapmemory.sh; }
 menu_autostart() { clear; grep -q "menu" /root/.bashrc && echo -e "${C_GREEN}[✔] Ya activo.${C_RST}" || (echo -e "
 menu" >> /root/.bashrc; echo -e "${C_GREEN}[✔] Activado.${C_RST}"); read -p "Enter..." ;}
 menu_banner() { clear; echo -e "${C_NEON_BLUE}╔══════════════════════════════════════════════╗
@@ -1473,7 +1990,7 @@ printf "${C_T}%-22s${C_RST} : ${C_V}%s${C_RST}
 }
 print_line "Developer" "$DEV"
 print_line "Version" "$VER"
-echo -e "${C_L}---------------------------------------------------------${C_RST}"
+echo -e "${C_NEON_BLUE}---------------------------------------------------------${C_RST}"
 print_line "CPU Model" "$CPU_MODEL"
 print_line "CPU Cores" "$CPU_CORES @ $CPU_FREQ MHz"
 print_line "CPU Cache" "$CPU_CACHE"
@@ -1493,13 +2010,13 @@ print_line "IPv4/IPv6" "$IPV4 / $IPV6"
 print_line "Organization" "$ORG"
 print_line "Location" "$CITY / $COUNTRY"
 print_line "Region" "$REGION"
-echo -e "${C_L}---------------------------------------------------------${C_RST}"
+echo -e "${C_NEON_BLUE}---------------------------------------------------------${C_RST}"
 echo -e "${C_T}Calculando I/O Speed...${C_RST}"
 IO_RES=$(dd if=/dev/zero of=test_$$ bs=64k count=16k conv=fdatasync 2>&1 | awk -F, '{print $3}' | tr -d ' ')
 rm -f test_$$
 echo -e "\033[1A\033[K\c"
 print_line "I/O Speed (average)" "$IO_RES"
-echo -e "${C_L}---------------------------------------------------------${C_RST}"
+echo -e "${C_NEON_BLUE}---------------------------------------------------------${C_RST}"
 echo -e ""
 read -p "Press any key to back..."
 }
@@ -1525,7 +2042,7 @@ while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 if [ "$SYS_LANG" == "en" ]; then
-M_TITLE="            🚀 VPS MANAGER - V2.0  🚀"
+M_TITLE="            🔥 VPS MANAGER - V2.1 🔥"
 M_OS="💻 OS        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Domain    "
@@ -1537,21 +2054,21 @@ M_USR="👥 Users     "
 M_CREATED="Created"
 M_ONLINE="Online"
 M_CAT1="[ ACCOUNT MANAGEMENT ]"
-M_OPT1="👤 User Management (SSH, TOKENID)"
+M_OPT1="👤 User Management (SSH ┆ TOKENID)"
 M_CAT2="[ TOOLS & SYSTEM ]"
 M_OPT2="🛠️ Installers & Protocols Manager"
-M_OPT3="🎨 Configure HTML Welcome Banner"
+M_OPT3="🎨 Configure HTML Banner"
 M_OPT4="🔍 Ports Monitor (Active / Inactive)"
 M_OPT5="🌐 Web Panel Management (Dashboard UI)"
 M_OPT6="🔄 Update Script"
-M_OPT7="👥 Install CheckUser (Multi-App Monitor)"
+M_OPT7="👥 Install CheckUser (Multi-App)"
 M_OPT8="🔧 Tools & System (Advanced)"
 M_OPT88="❌ Uninstall Script"
 M_OPT0="🚪 Exit"
 M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
-M_TITLE="           🚀 VPS MANAGER - V2.0🚀"
+M_TITLE="           🔥 VPS MANAGER - V2.1 🔥"
 M_OS="💻 SO       "
 M_IP="🌐 IP       "
 M_DOM="🎯 Dominio  "
@@ -1563,14 +2080,14 @@ M_USR="👥 Usuarios "
 M_CREATED="Creados"
 M_ONLINE="En Línea"
 M_CAT1="[ GESTIÓN DE CUENTAS ]"
-M_OPT1="👤 Gestión de Usuarios (SSH, TOKENID)"
+M_OPT1="👤 Gestión de Usuarios (SSH ┆ TOKENID)"
 M_CAT2="[ HERRAMIENTAS Y SISTEMA ]"
 M_OPT2="🛠️ Gestor de Instalaciones y Protocolos"
-M_OPT3="🎨 Configurar Banner HTML de Bienvenida"
+M_OPT3="🎨 Configurar Banner HTML"
 M_OPT4="🔍 Monitor de Puertos (Activos / Inactivos)"
-M_OPT5="🌐 Gestionar Panel Web (Dashboard UI)"
+M_OPT5="🌐 Gestor Panel Web (Dashboard UI)"
 M_OPT6="🔄 Actualizar Script"
-M_OPT7="👥 Instalar CheckUser (Monitor Multi-App)"
+M_OPT7="👥 Instalar CheckUser (Multi-App)"
 M_OPT8="🔧 Herramientas y Sistema (Avanzado)"
 M_OPT88="❌ Desinstalar Script"
 M_OPT0="🚪 Salir"
@@ -1592,6 +2109,7 @@ ST_XRAY=$(chk_svc xray)
 ST_BHTTP=$(chk_svc superflash-bhttp)
 ST_STUNNEL=$(chk_svc stunnel4)
 ST_WS=$(chk_svc wsproxy)
+ST HCR=$(chk_svc hcr-server)
 ST_UDPGW=$(chk_svc badvpn-7300)
 ST_DROPBEAR=$(chk_svc dropbear)
 SUBDOMINIO=$( [ -f /etc/vps-manager/dominio ] && cat /etc/vps-manager/dominio || echo "No Configurado" )
@@ -1606,7 +2124,7 @@ echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_RAM}:${C_RST} $RAM_BAR ($RAM_STR)"
 echo -e "${C_NEON_BLUE}  ${C_NEON_GREEN}${M_USR}: ${C_RST} ${C_NEON_YELLOW}${USERS_CREADOS}${C_RST} ${M_CREATED} ${C_NEON_BLUE}|${C_RST} ${C_NEON_YELLOW}${CONECTADOS}${C_RST} ${M_ONLINE}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "  ${C_NEON_BLUE}SSH: ${ST_SSH} ${C_NEON_BLUE}BADVPN: ${ST_UDPGW} ${C_NEON_BLUE}XRAY: ${ST_XRAY} ${C_NEON_BLUE}BHTTP: ${ST_BHTTP}"
-echo -e "  ${C_NEON_BLUE}STUNNEL: ${ST_STUNNEL}${C_NEON_BLUE}WS: ${ST_WS} ${C_NEON_BLUE}DROPBEAR: ${ST_DROPBEAR}"
+echo -e "  ${C_NEON_BLUE}SSL: ${ST_STUNNEL} ${C_NEON_BLUE}WS: ${ST_WS} ${C_NEON_BLUE}DROPBEAR: ${ST_DROPBEAR}" ${C_NEON_BLUE}HCR: ${ST_HCR}"
 echo -e "${C_NEON_BLUE}╠══════════════════════════════════════════════╣${C_RST}"
 echo -e "${C_NEON_PURPLE}  ${M_CAT1}${C_RST}"
 echo -e "  ${C_NEON_YELLOW}1.${C_RST} ${M_OPT1}"
