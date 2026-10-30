@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# VPS MANAGER  - Panel V5.0 LTS (Bilingüe / Multi-Ubuntu)
+# VPS MANAGER  - Panel V1.0  LTS (Bilingüe / Multi-Ubuntu)
 # ==========================================
 C_RST='\033[0m'; C_RED='\033[1;31m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'; C_CYAN='\033[1;36m'
 C_NEON_BLUE='\033[38;5;39m'; C_NEON_GREEN='\033[38;5;46m'; C_NEON_PURPLE='\033[38;5;141m'; C_NEON_YELLOW='\033[38;5;226m'
@@ -667,7 +667,7 @@ menu_info() {
 clear
 echo -e "${C_CYAN}[+] Recopilando información del sistema, por favor espere...${C_RST}"
 DEV="@CloudGT (https://t.me/)"
-VER="v5.0 LTS"
+VER="v1.0 "
 CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
 CPU_CORES=$(nproc)
 CPU_FREQ=$(grep -m1 'cpu MHz' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
@@ -750,7 +750,7 @@ while true; do
 clear
 SYS_LANG=$(cat /etc/vps-manager/lang 2>/dev/null || echo "es")
 if [ "$SYS_LANG" == "en" ]; then
-M_TITLE="🌟 VPS MANAGER PREMIUM - V5.0 LTS PANEL 🌟"
+M_TITLE="🌟 VPS MANAGER - V1.0  🌟"
 M_OS="💻 OS        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Domain    "
@@ -773,7 +773,7 @@ M_OPT0="🚪 Exit"
 M_SEL="Select an option: "
 M_ERR="Invalid option."
 else
-M_TITLE="🌟 VPS MANAGER PREMIUM - PANEL V5.0 LTS 🌟"
+M_TITLE="🌟 VPS MANAGER - V1.0  🌟"
 M_OS="💻 SO        "
 M_IP="🌐 IP        "
 M_DOM="🎯 Dominio   "
